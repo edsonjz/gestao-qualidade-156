@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { X, Calendar, User, TrendingUp, AlertTriangle, FileText, CheckCircle, Info } from 'lucide-react';
+import { X, Calendar, User, TrendingUp, AlertTriangle, FileText, CheckCircle, Info, Edit, Trash2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 export default function OperatorProfileModal({ 
@@ -333,7 +333,7 @@ export default function OperatorProfileModal({
             {/* Histórico Completo de Monitorias */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Histórico de Monitorias</h4>
-              <div className="bg-white dark:bg-[#0c0c0f] rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
+              <div className="bg-white dark:bg-[#0c0c0f] rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-x-auto text-xs">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-zinc-50 dark:bg-zinc-900/40 text-zinc-500 dark:text-zinc-400 font-semibold uppercase border-b border-zinc-200 dark:border-zinc-800">
@@ -374,17 +374,21 @@ export default function OperatorProfileModal({
                           <td className="px-4 py-2.5 leading-relaxed max-w-sm truncate" title={h.feedback_notes}>
                             {h.feedback_notes || <span className="text-zinc-400">Sem observações</span>}
                           </td>
-                          <td className="px-4 py-2.5 text-center whitespace-nowrap no-print space-x-2">
+                          <td className="px-4 py-2.5 text-center whitespace-nowrap no-print flex items-center justify-center gap-2">
                             <button
                               onClick={() => onEditMonitoring(h)}
-                              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-bold transition-colors cursor-pointer"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded font-bold transition-colors cursor-pointer text-[10px]"
+                              title="Editar Monitoria"
                             >
+                              <Edit className="w-3 h-3" />
                               Editar
                             </button>
                             <button
                               onClick={() => handleDeleteClick(h.id)}
-                              className="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 font-bold transition-colors cursor-pointer"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/20 rounded font-bold transition-colors cursor-pointer text-[10px]"
+                              title="Excluir Monitoria"
                             >
+                              <Trash2 className="w-3 h-3" />
                               Excluir
                             </button>
                           </td>
