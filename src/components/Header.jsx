@@ -8,7 +8,9 @@ export default function Header({
   setDarkMode, 
   alertsCount, 
   activeTab,
-  onLogout
+  onLogout,
+  monitors = [],
+  supervisors = []
 }) {
   const getTitle = () => {
     switch (activeTab) {
@@ -23,11 +25,11 @@ export default function Header({
     }
   };
 
+  // Construir a lista de perfis dinamicamente com base nas tabelas do banco
   const profiles = [
-    { id: 'Clarice', name: 'Clarice (Monitora)', role: 'Monitora' },
-    { id: 'Simone', name: 'Simone (Monitora)', role: 'Monitora' },
-    { id: 'Carlos', name: 'Carlos (Supervisor)', role: 'Supervisor' },
     { id: 'Admin', name: 'Administrador (Admin)', role: 'Admin' },
+    ...monitors.map(m => ({ id: m.id, name: `${m.name} (Monitora)`, role: 'Monitora' })),
+    ...supervisors.map(s => ({ id: s.id, name: `${s.name} (Supervisor)`, role: 'Supervisor' }))
   ];
 
   return (
@@ -39,15 +41,15 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Simulação de Perfil de Acesso */}
+        {/* Identificação de Acesso */}
         <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2.5 py-1.5">
           <User className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Acesso Simulado:</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Identificação:</span>
           <select
             value={activeProfile.id}
             onChange={(e) => {
               const prof = profiles.find(p => p.id === e.target.value);
-              setActiveProfile(prof);
+              if (prof) setActiveProfile(prof);
             }}
             className="bg-transparent text-xs font-semibold text-zinc-800 dark:text-zinc-200 border-none outline-none focus:ring-0 p-0 cursor-pointer"
           >

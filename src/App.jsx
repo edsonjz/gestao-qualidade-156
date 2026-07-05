@@ -26,7 +26,19 @@ export default function App() {
   // Estados de Interface
   const [activeTab, setActiveTab] = useState('dashboard');
   const [darkMode, setDarkMode] = useState(false);
-  const [activeProfile, setActiveProfile] = useState({ id: 'Clarice', name: 'Clarice (Monitora)', role: 'Monitora' });
+  const [activeProfile, setActiveProfile] = useState(() => {
+    try {
+      const saved = localStorage.getItem('q_active_profile');
+      return saved ? JSON.parse(saved) : { id: 'Admin', name: 'Administrador (Admin)', role: 'Admin' };
+    } catch (e) {
+      return { id: 'Admin', name: 'Administrador (Admin)', role: 'Admin' };
+    }
+  });
+
+  // Salvar perfil selecionado no navegador
+  useEffect(() => {
+    localStorage.setItem('q_active_profile', JSON.stringify(activeProfile));
+  }, [activeProfile]);
 
   // Estados de Dados
   const [operators, setOperators] = useState([]);
@@ -427,7 +439,7 @@ export default function App() {
   // Clarice e Simone são cadastradas como Monitora 1 e Monitora 2 padrão no banco de dados.
   // Vamos buscar a correspondente.
   const activeMonitorObj = useMemo(() => {
-    return monitors.find(m => m.name.toLowerCase().includes(activeProfile.id.toLowerCase())) || 
+    return monitors.find(m => m.id === activeProfile.id || m.name.toLowerCase().includes(activeProfile.id.toLowerCase())) || 
            monitors[0] || 
            { id: '00000000-0000-0000-0000-000000000000', name: 'Clarice' };
   }, [monitors, activeProfile]);
@@ -469,6 +481,8 @@ export default function App() {
           alertsCount={0}
           activeTab={activeTab}
           onLogout={handleLogout}
+          monitors={monitors}
+          supervisors={supervisors}
         />
 
         {/* Content Wrapper */}
