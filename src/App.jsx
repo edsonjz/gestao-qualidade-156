@@ -65,7 +65,8 @@ export default function App() {
     allocation: 'Presencial',
     skill: 'Voz',
     escala: '6x1',
-    active: true
+    active: true,
+    assigned_monitor_id: ''
   });
 
   // 0. Monitorar Sessão do Supabase
@@ -157,6 +158,7 @@ export default function App() {
   const handleSaveOperator = async (e) => {
     e.preventDefault();
     const superObj = supervisors.find(s => s.id === opFormFields.supervisor_id);
+    const monitorObj = monitors.find(m => m.id === opFormFields.assigned_monitor_id);
     const opData = {
       name: opFormFields.name,
       supervisor_id: opFormFields.supervisor_id || null,
@@ -165,7 +167,9 @@ export default function App() {
       allocation: opFormFields.allocation,
       skill: opFormFields.skill,
       escala: opFormFields.escala,
-      active: opFormFields.active
+      active: opFormFields.active,
+      assigned_monitor_id: opFormFields.assigned_monitor_id || null,
+      assigned_monitor_name: monitorObj ? monitorObj.name : null
     };
 
     try {
@@ -201,7 +205,8 @@ export default function App() {
       allocation: op.allocation,
       skill: op.skill,
       escala: op.escala,
-      active: op.active
+      active: op.active,
+      assigned_monitor_id: op.assigned_monitor_id || ''
     });
     setShowOpForm(true);
   };
@@ -444,6 +449,31 @@ export default function App() {
            { id: '00000000-0000-0000-0000-000000000000', name: 'Clarice' };
   }, [monitors, activeProfile]);
 
+  // 11. Filtragem Geral baseada na Identificação de Perfil Ativo
+  const isSupervisor = activeProfile.role === 'Supervisor';
+  const isMonitor = activeProfile.role === 'Monitora';
+  const supervisorName = activeProfile.name ? activeProfile.name.replace(' (Supervisor)', '') : '';
+  const monitorName = activeProfile.name ? activeProfile.name.replace(' (Monitora)', '') : '';
+
+  // Filtrar operadores por supervisor se for supervisor logado
+  const filteredOperators = useMemo(() => {
+    if (!isSupervisor) return operators;
+    return operators.filter(o => o.supervisor_id === activeProfile.id || o.supervisor_name === supervisorName);
+  }, [operators, activeProfile, isSupervisor, supervisorName]);
+
+  // Filtrar monitorias por supervisor se for supervisor logado
+  const filteredMonitorings = useMemo(() => {
+    if (!isSupervisor) return monitorings;
+    const supervisorOpIds = new Set(filteredOperators.map(o => o.id));
+    return monitorings.filter(m => supervisorOpIds.has(m.operator_id));
+  }, [monitorings, filteredOperators, isSupervisor]);
+
+  // Filtrar fila inteligente do monitor logado se for monitora
+  const queueOperators = useMemo(() => {
+    if (!isMonitor) return filteredOperators;
+    return filteredOperators.filter(o => o.assigned_monitor_id === null || o.assigned_monitor_id === activeProfile.id || o.assigned_monitor_name === monitorName);
+  }, [filteredOperators, activeProfile, isMonitor, monitorName]);
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-[#09090b]">
@@ -495,8 +525,8 @@ export default function App() {
             <>
               {activeTab === 'dashboard' && (
                 <Dashboard 
-                  operators={operators} 
-                  monitorings={monitorings} 
+                  operators={filteredOperators} 
+                  monitorings={filteredMonitorings} 
                   activeCycle={activeCycle}
                   darkMode={darkMode} 
                 />
@@ -504,8 +534,8 @@ export default function App() {
 
               {activeTab === 'queue' && (
                 <SmartQueue 
-                  operators={operators}
-                  monitorings={monitorings}
+                  operators={queueOperators}
+                  monitorings={filteredMonitorings}
                   activeCycle={activeCycle}
                   onStartMonitoring={(op) => setSelectedOperatorForMonitoring(op)}
                   onOpenFeedback={(op) => setSelectedOperatorForFeedback(op)}
@@ -515,7 +545,7 @@ export default function App() {
 
               {activeTab === 'operators' && (
                 <Operators 
-                  operators={operators}
+                  operators={filteredOperators}
                   supervisors={supervisors}
                   onAddOperator={() => {
                     setEditingOperator(null);
@@ -526,7 +556,8 @@ export default function App() {
                       allocation: 'Presencial',
                       skill: 'Voz',
                       escala: '6x1',
-                      active: true
+                      active: true,
+                      assigned_monitor_id: ''
                     });
                     setShowOpForm(true);
                   }}
@@ -540,8 +571,8 @@ export default function App() {
 
               {activeTab === 'monitors' && (
                 <MonitorsSupervisors 
-                  operators={operators}
-                  monitorings={monitorings}
+                  operators={filteredOperators}
+                  monitorings={filteredMonitorings}
                   monitors={monitors}
                   supervisors={supervisors}
                   activeCycle={activeCycle}
@@ -554,8 +585,8 @@ export default function App() {
 
               {activeTab === 'intelligence' && (
                 <AnalyticalIntelligence 
-                  operators={operators}
-                  monitorings={monitorings}
+                  operators={filteredOperators}
+                  monitorings={filteredMonitorings}
                   activeCycle={activeCycle}
                   darkMode={darkMode}
                 />
@@ -563,8 +594,8 @@ export default function App() {
 
               {activeTab === 'reports' && (
                 <Reports 
-                  operators={operators}
-                  monitorings={monitorings}
+                  operators={filteredOperators}
+                  monitorings={filteredMonitorings}
                   monitors={monitors}
                   supervisors={supervisors}
                 />
@@ -651,6 +682,20 @@ export default function App() {
                   <option value="">Selecione...</option>
                   {supervisors.map(s => (
                     <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-500">Monitora Vinculada (Opcional)</label>
+                <select
+                  value={opFormFields.assigned_monitor_id}
+                  onChange={(e) => setOpFormFields({ ...opFormFields, assigned_monitor_id: e.target.value })}
+                  className="w-full bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm text-zinc-800 dark:text-zinc-200 outline-none"
+                >
+                  <option value="">Qualquer Monitora</option>
+                  {monitors.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
               </div>

@@ -254,6 +254,12 @@ export default function OperatorProfileModal({ operator, onClose, darkMode }) {
                     <span className="text-zinc-500 dark:text-zinc-400">Escala:</span>
                     <span className="font-semibold">{operator.escala}</span>
                   </div>
+                  <div className="flex justify-between border-t border-zinc-100 dark:border-zinc-800/40 pt-2.5 mt-2.5">
+                    <span className="text-zinc-500 dark:text-zinc-400 font-medium">Monitora Vinculada:</span>
+                    <span className="font-bold text-blue-600 dark:text-blue-400">
+                      {operator.assigned_monitor_name || 'Qualquer Monitora'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
