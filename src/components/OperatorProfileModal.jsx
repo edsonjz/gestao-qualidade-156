@@ -3,7 +3,13 @@ import ReactECharts from 'echarts-for-react';
 import { X, Calendar, User, TrendingUp, AlertTriangle, FileText, CheckCircle, Info } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-export default function OperatorProfileModal({ operator, onClose, darkMode }) {
+export default function OperatorProfileModal({ 
+  operator, 
+  onClose, 
+  darkMode,
+  onEditMonitoring,
+  onDeleteMonitoring
+}) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,6 +36,16 @@ export default function OperatorProfileModal({ operator, onClose, darkMode }) {
       fetchHistory();
     }
   }, [operator]);
+
+  const handleDeleteClick = async (monitoringId) => {
+    if (!confirm('Deseja realmente excluir esta monitoria? Esta ação é irreversível.')) return;
+    try {
+      await onDeleteMonitoring(monitoringId);
+      setHistory(prev => prev.filter(h => h.id !== monitoringId));
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // 1. Estatísticas individuais do operador
   const stats = useMemo(() => {
@@ -326,12 +342,13 @@ export default function OperatorProfileModal({ operator, onClose, darkMode }) {
                       <th className="px-4 py-2.5 text-center">Nota</th>
                       <th className="px-4 py-2.5 text-center">Status</th>
                       <th className="px-4 py-2.5">Observações / Feedback</th>
+                      <th className="px-4 py-2.5 text-center no-print">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-zinc-800 dark:text-zinc-200">
                     {history.length === 0 ? (
                       <tr>
-                        <td colSpan="5" className="text-center py-6 text-zinc-400">Nenhum monitoramento realizado.</td>
+                        <td colSpan="6" className="text-center py-6 text-zinc-400">Nenhum monitoramento realizado.</td>
                       </tr>
                     ) : (
                       history.slice().reverse().map(h => (
@@ -356,6 +373,20 @@ export default function OperatorProfileModal({ operator, onClose, darkMode }) {
                           </td>
                           <td className="px-4 py-2.5 leading-relaxed max-w-sm truncate" title={h.feedback_notes}>
                             {h.feedback_notes || <span className="text-zinc-400">Sem observações</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-center whitespace-nowrap no-print space-x-2">
+                            <button
+                              onClick={() => onEditMonitoring(h)}
+                              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-bold transition-colors cursor-pointer"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(h.id)}
+                              className="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 font-bold transition-colors cursor-pointer"
+                            >
+                              Excluir
+                            </button>
                           </td>
                         </tr>
                       ))

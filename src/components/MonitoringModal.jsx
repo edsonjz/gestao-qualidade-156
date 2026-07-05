@@ -7,7 +7,8 @@ export default function MonitoringModal({
   activeCycle, 
   defaultChecklistItems, 
   onClose, 
-  onSave 
+  onSave,
+  monitoring = null
 }) {
   const [checklist, setChecklist] = useState([]);
   const [customItems, setCustomItems] = useState([]);
@@ -17,17 +18,51 @@ export default function MonitoringModal({
   const [newCustomWeight, setNewCustomWeight] = useState(20);
   const [showCustomForm, setShowCustomForm] = useState(false);
 
-  // Inicializar o checklist com os itens padrão
+  // Inicializar o checklist com os itens padrão ou os salvos na monitoria
   useEffect(() => {
-    if (defaultChecklistItems) {
+    if (monitoring) {
+      setNotes(monitoring.feedback_notes || '');
+      setIsNCG(monitoring.is_ncg || false);
+
+      const savedChecklist = monitoring.checklist || [];
+      const defaultLabels = new Set((defaultChecklistItems || []).map(item => item.label));
+      
+      const standards = [];
+      const customs = [];
+
+      savedChecklist.forEach((item, index) => {
+        if (defaultLabels.has(item.label)) {
+          standards.push({
+            id: `std_${index}`,
+            label: item.label,
+            weight: item.weight,
+            value: item.value
+          });
+        } else {
+          customs.push({
+            id: `custom_${index}`,
+            label: item.label,
+            weight: item.weight,
+            value: item.value,
+            isCustom: true
+          });
+        }
+      });
+
+      setChecklist(standards);
+      setCustomItems(customs);
+    } else if (defaultChecklistItems) {
       setChecklist(defaultChecklistItems.map(item => ({
         id: item.id,
         label: item.label,
         weight: item.weight,
         value: 'Sim' // Padrão é Conforme ('Sim', 'Não', 'N/A')
       })));
+      setCustomItems([]);
+      setNotes('');
+      setIsNCG(false);
     }
-  }, [defaultChecklistItems]);
+  }, [monitoring, defaultChecklistItems]);
 
   // Combinar itens padrão e customizados
   const allItems = useMemo(() => {
@@ -93,15 +128,22 @@ export default function MonitoringModal({
       value: item.value
     }));
 
-    onSave({
+    const payload = {
       operator_id: operator.id,
-      monitor_id: monitor.id,
-      cycle_id: activeCycle.id,
+      monitor_id: monitoring ? monitoring.monitor_id : monitor.id,
+      cycle_id: monitoring ? monitoring.cycle_id : activeCycle.id,
       score: score,
-      status: 'Aguardando Feedback',
+      status: monitoring ? monitoring.status : 'Aguardando Feedback',
       feedback_notes: notes,
-      checklist: formattedChecklist
-    });
+      checklist: formattedChecklist,
+      is_ncg: isNCG
+    };
+
+    if (monitoring) {
+      payload.id = monitoring.id;
+    }
+
+    onSave(payload);
   };
 
   // Cores de fundo e texto dinâmicas para a nota

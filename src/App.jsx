@@ -54,6 +54,7 @@ export default function App() {
   const [selectedOperatorForMonitoring, setSelectedOperatorForMonitoring] = useState(null);
   const [selectedOperatorForFeedback, setSelectedOperatorForFeedback] = useState(null);
   const [selectedOperatorForProfile, setSelectedOperatorForProfile] = useState(null);
+  const [editingMonitoring, setEditingMonitoring] = useState(null);
   
   // Modais de Cadastro Manual
   const [showOpForm, setShowOpForm] = useState(false);
@@ -394,19 +395,59 @@ export default function App() {
     }
   };
 
-  // 8. Salvar nova monitoria (e bloquear operador)
+  // 8. Salvar monitoria (criar ou editar)
   const handleSaveMonitoring = async (payload) => {
     try {
-      const { error } = await supabase
-        .from('q_monitorings')
-        .insert([payload]);
-      if (error) throw error;
+      if (payload.id) {
+        // Atualizar monitoria existente
+        const { error } = await supabase
+          .from('q_monitorings')
+          .update({
+            score: payload.score,
+            feedback_notes: payload.feedback_notes,
+            checklist: payload.checklist,
+            is_ncg: payload.is_ncg,
+            status: payload.status
+          })
+          .eq('id', payload.id);
+        if (error) throw error;
+      } else {
+        // Criar nova monitoria
+        const { error } = await supabase
+          .from('q_monitorings')
+          .insert([payload]);
+        if (error) throw error;
+      }
       
       setSelectedOperatorForMonitoring(null);
+      setEditingMonitoring(null);
       fetchData();
     } catch (err) {
       console.error('Erro ao salvar monitoria:', err);
     }
+  };
+
+  // Excluir monitoria
+  const handleDeleteMonitoring = async (monitoringId) => {
+    try {
+      const { error } = await supabase
+        .from('q_monitorings')
+        .delete()
+        .eq('id', monitoringId);
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      console.error('Erro ao excluir monitoria:', err);
+      alert('Erro ao excluir monitoria no banco de dados.');
+    }
+  };
+
+  // Iniciar edição de monitoria
+  const handleEditMonitoringClick = (monitoring) => {
+    const op = operators.find(o => o.id === monitoring.operator_id);
+    if (!op) return;
+    setEditingMonitoring(monitoring);
+    setSelectedOperatorForMonitoring(op);
   };
 
   // 9. Concluir feedback e liberar operador
@@ -616,15 +657,19 @@ export default function App() {
 
       {/* ================= MODAIS DE AVALIAÇÃO E FICHA ================= */}
 
-      {/* Modal: Realizar Monitoria */}
+      {/* Modal: Realizar/Editar Monitoria */}
       {selectedOperatorForMonitoring && (
         <MonitoringModal
           operator={selectedOperatorForMonitoring}
           monitor={activeMonitorObj}
           activeCycle={activeCycle}
           defaultChecklistItems={checklistItems}
-          onClose={() => setSelectedOperatorForMonitoring(null)}
+          onClose={() => {
+            setSelectedOperatorForMonitoring(null);
+            setEditingMonitoring(null);
+          }}
           onSave={handleSaveMonitoring}
+          monitoring={editingMonitoring}
         />
       )}
 
@@ -643,6 +688,8 @@ export default function App() {
           operator={selectedOperatorForProfile}
           onClose={() => setSelectedOperatorForProfile(null)}
           darkMode={darkMode}
+          onEditMonitoring={handleEditMonitoringClick}
+          onDeleteMonitoring={handleDeleteMonitoring}
         />
       )}
 
