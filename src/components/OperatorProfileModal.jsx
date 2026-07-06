@@ -19,7 +19,7 @@ export default function OperatorProfileModal({
       try {
         const { data, error } = await supabase
           .from('q_monitorings')
-          .select('id, score, monitoring_date, status, feedback_notes, is_ncg, checklist, monitor_id, cycle_id, q_monitors(name)')
+          .select('id, operator_id, score, monitoring_date, status, feedback_notes, is_ncg, checklist, monitor_id, cycle_id, q_monitors(name)')
           .eq('operator_id', operator.id)
           .order('monitoring_date', { ascending: true }); // do mais antigo ao mais recente para gráfico
 
