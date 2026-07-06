@@ -423,24 +423,26 @@ export default function App() {
     }
 
     try {
-      if (payload.id) {
+      // Remover colunas calculadas/geradas pelo banco de dados para evitar erro de inserção/update
+      const { is_ncg, ...dbPayload } = payload;
+
+      if (dbPayload.id) {
         // Atualizar monitoria existente
         const { error } = await supabase
           .from('q_monitorings')
           .update({
-            score: payload.score,
-            feedback_notes: payload.feedback_notes,
-            checklist: payload.checklist,
-            is_ncg: payload.is_ncg,
-            status: payload.status
+            score: dbPayload.score,
+            feedback_notes: dbPayload.feedback_notes,
+            checklist: dbPayload.checklist,
+            status: dbPayload.status
           })
-          .eq('id', payload.id);
+          .eq('id', dbPayload.id);
         if (error) throw error;
       } else {
         // Criar nova monitoria
         const { error } = await supabase
           .from('q_monitorings')
-          .insert([payload]);
+          .insert([dbPayload]);
         if (error) throw error;
       }
       
