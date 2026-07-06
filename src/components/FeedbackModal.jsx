@@ -14,7 +14,7 @@ export default function FeedbackModal({ operator, onClose, onSave }) {
       try {
         const { data, error } = await supabase
           .from('q_monitorings')
-          .select('*, q_monitors(name)')
+          .select('id, score, monitoring_date, feedback_notes, status, q_monitors(name)')
           .eq('operator_id', operator.id)
           .eq('status', 'Aguardando Feedback')
           .order('monitoring_date', { ascending: false })

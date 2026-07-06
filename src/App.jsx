@@ -95,13 +95,12 @@ export default function App() {
   }, [darkMode]);
 
   // 2. Carregamento Geral de Dados (Supabase)
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
+  const fetchStaticData = useCallback(async () => {
     try {
       // a. Ciclos
       const { data: cycles } = await supabase
         .from('q_cycles')
-        .select('*')
+        .select('id, cycle_number, status, started_at, completed_at, total_operators, completed_operators')
         .order('cycle_number', { ascending: false });
       
       const active = cycles?.find(c => c.status === 'Ativo') || null;
@@ -110,40 +109,48 @@ export default function App() {
       // b. Monitores
       const { data: monitorsData } = await supabase
         .from('q_monitors')
-        .select('*')
+        .select('id, name, daily_target')
         .order('name');
       setMonitors(monitorsData || []);
 
       // c. Supervisores
       const { data: supervisorsData } = await supabase
         .from('q_supervisors')
-        .select('*')
+        .select('id, name')
         .order('name');
       setSupervisors(supervisorsData || []);
 
+      // f. Itens do Checklist
+      const { data: checklistData } = await supabase
+        .from('q_checklist_items')
+        .select('id, label, weight')
+        .order('weight', { ascending: false });
+      setChecklistItems(checklistData || []);
+
+    } catch (err) {
+      console.error('Erro ao buscar dados estáticos do Supabase:', err);
+    }
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
       // d. Operadores
       const { data: operatorsData } = await supabase
         .from('q_operators')
-        .select('*')
+        .select('id, name, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback, last_monitoring_at, last_feedback_at, assigned_monitor_id, assigned_monitor_name')
         .order('name');
       setOperators(operatorsData || []);
 
       // e. Monitorias
       const { data: monitoringsData } = await supabase
         .from('q_monitorings')
-        .select('*, q_monitors(name), q_operators(name, supervisor_name, schedule, allocation, skill, escala)')
+        .select('id, operator_id, monitor_id, cycle_id, score, monitoring_date, status, feedback_date, feedback_notes, checklist, is_ncg, q_monitors(name), q_operators(name, supervisor_name, schedule, allocation, skill, escala)')
         .order('monitoring_date', { ascending: false });
       setMonitorings(monitoringsData || []);
 
-      // f. Itens do Checklist
-      const { data: checklistData } = await supabase
-        .from('q_checklist_items')
-        .select('*')
-        .order('weight', { ascending: false });
-      setChecklistItems(checklistData || []);
-
     } catch (err) {
-      console.error('Erro ao buscar dados do Supabase:', err);
+      console.error('Erro ao buscar dados dinâmicos do Supabase:', err);
     } finally {
       setIsLoading(false);
     }
@@ -151,9 +158,10 @@ export default function App() {
 
   useEffect(() => {
     if (session) {
+      fetchStaticData();
       fetchData();
     }
-  }, [fetchData, session]);
+  }, [fetchStaticData, fetchData, session]);
 
   // 3. CRUD Operadores
   const handleSaveOperator = async (e) => {
@@ -233,6 +241,7 @@ export default function App() {
         .from('q_supervisors')
         .insert([{ name }]);
       if (error) throw error;
+      fetchStaticData();
       fetchData();
     } catch (err) {
       console.error('Erro ao adicionar supervisor:', err);
@@ -247,6 +256,7 @@ export default function App() {
         .delete()
         .eq('id', id);
       if (error) throw error;
+      fetchStaticData();
       fetchData();
     } catch (err) {
       console.error('Erro ao excluir supervisor:', err);
@@ -260,6 +270,7 @@ export default function App() {
         .from('q_monitors')
         .insert([{ name, daily_target: target }]);
       if (error) throw error;
+      fetchStaticData();
       fetchData();
     } catch (err) {
       console.error('Erro ao adicionar monitora:', err);
@@ -274,6 +285,7 @@ export default function App() {
         .delete()
         .eq('id', id);
       if (error) throw error;
+      fetchStaticData();
       fetchData();
     } catch (err) {
       console.error('Erro ao excluir monitora:', err);
@@ -287,7 +299,7 @@ export default function App() {
         .from('q_checklist_items')
         .insert([{ label, weight }]);
       if (error) throw error;
-      fetchData();
+      fetchStaticData();
     } catch (err) {
       console.error('Erro ao adicionar critério:', err);
       alert('Cuidado: Nome do critério já cadastrado.');
@@ -302,7 +314,7 @@ export default function App() {
         .delete()
         .eq('id', id);
       if (error) throw error;
-      fetchData();
+      fetchStaticData();
     } catch (err) {
       console.error('Erro ao excluir critério:', err);
     }
@@ -314,7 +326,7 @@ export default function App() {
     try {
       // a. Criar supervisores novos
       const uniqueSuperNames = [...new Set(parsedOperators.map(o => o.supervisor_name).filter(Boolean))];
-      const { data: currentSupers } = await supabase.from('q_supervisors').select('*');
+      const { data: currentSupers } = await supabase.from('q_supervisors').select('id, name');
       const currentSuperNames = currentSupers.map(s => s.name);
       
       const newSuperNames = uniqueSuperNames.filter(name => !currentSuperNames.includes(name));
@@ -322,7 +334,7 @@ export default function App() {
         const { data: insertedSupers } = await supabase
           .from('q_supervisors')
           .insert(newSuperNames.map(name => ({ name })))
-          .select();
+          .select('id, name');
         if (insertedSupers) {
           currentSupers.push(...insertedSupers);
         }
@@ -335,7 +347,9 @@ export default function App() {
       });
 
       // b. Processar Operadores
-      const { data: currentOps } = await supabase.from('q_operators').select('*');
+      const { data: currentOps } = await supabase
+        .from('q_operators')
+        .select('id, name, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback');
       const currentOpsMap = {};
       currentOps.forEach(o => {
         currentOpsMap[o.name] = o;
@@ -386,6 +400,7 @@ export default function App() {
         if (error) throw error;
       }
 
+      await fetchStaticData();
       await fetchData();
     } catch (err) {
       console.error('Erro na sincronização de planilha:', err);
@@ -397,6 +412,16 @@ export default function App() {
 
   // 8. Salvar monitoria (criar ou editar)
   const handleSaveMonitoring = async (payload) => {
+    // Validar se ciclo e monitora estão corretos para evitar rejeição por chaves estrangeiras no banco
+    if (!payload.cycle_id) {
+      alert('Erro: Nenhum ciclo ativo foi encontrado. Crie um ciclo na aba "Configurações" antes de realizar monitorias.');
+      return;
+    }
+    if (!payload.monitor_id || payload.monitor_id === '00000000-0000-0000-0000-000000000000') {
+      alert('Erro: Nenhuma monitora cadastrada ou selecionada para assinar esta avaliação. Cadastre uma monitora na aba "Monitoras & Supervisores" ou selecione uma no cabeçalho antes de salvar.');
+      return;
+    }
+
     try {
       if (payload.id) {
         // Atualizar monitoria existente
@@ -424,6 +449,7 @@ export default function App() {
       fetchData();
     } catch (err) {
       console.error('Erro ao salvar monitoria:', err);
+      alert('Erro ao salvar monitoria no Supabase: ' + (err.message || JSON.stringify(err)));
     }
   };
 
