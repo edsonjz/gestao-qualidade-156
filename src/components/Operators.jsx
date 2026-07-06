@@ -27,6 +27,7 @@ export default function Operators({
   const [search, setSearch] = useState('');
   const [filterActive, setFilterActive] = useState('ativos');
   const [filterSupervisor, setFilterSupervisor] = useState('todos');
+  const [filterSkill, setFilterSkill] = useState('todos');
   const [currentPage, setCurrentPage] = useState(1);
   const [uploading, setUploading] = useState(false);
   const itemsPerPage = 15;
@@ -48,9 +49,14 @@ export default function Operators({
         filterSupervisor === 'todos' ? true :
         o.supervisor_name === filterSupervisor;
 
-      return matchesSearch && matchesActive && matchesSupervisor;
+      // Filtro skill
+      const matchesSkill = 
+        filterSkill === 'todos' ? true :
+        (o.skill || 'Voz') === filterSkill;
+
+      return matchesSearch && matchesActive && matchesSupervisor && matchesSkill;
     });
-  }, [operators, search, filterActive, filterSupervisor]);
+  }, [operators, search, filterActive, filterSupervisor, filterSkill]);
 
   // 2. Paginação
   const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
@@ -127,7 +133,7 @@ export default function Operators({
         </div>
 
         {/* Filtros */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
           {/* Busca por Nome */}
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
@@ -170,6 +176,20 @@ export default function Operators({
             {supervisors.map(s => (
               <option key={s.id} value={s.name}>{s.name}</option>
             ))}
+          </select>
+
+          {/* Filtro Skill */}
+          <select
+            value={filterSkill}
+            onChange={(e) => {
+              setFilterSkill(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer"
+          >
+            <option value="todos">Todas as Skills</option>
+            <option value="Voz">Voz</option>
+            <option value="Mídias">Mídias</option>
           </select>
         </div>
       </div>

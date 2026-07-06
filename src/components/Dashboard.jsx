@@ -11,6 +11,17 @@ import {
 } from 'lucide-react';
 import { getTurnFromSchedule } from '../utils/distribution';
 
+const formatDuration = (ms) => {
+  if (!ms || isNaN(ms)) return '00:00:00';
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+};
+
 export default function Dashboard({ operators, monitorings, activeCycle, darkMode }) {
   // 1. Cálculos de Indicadores (KPIs)
   const kpis = useMemo(() => {
@@ -40,18 +51,18 @@ export default function Dashboard({ operators, monitorings, activeCycle, darkMod
     const opsAguardandoMonitoria = operators.filter(o => o.active && !opsMonitoredInActiveCycle.has(o.id)).length;
     const opsAguardandoFeedback = operators.filter(o => o.active && o.status_feedback === 'Aguardando Feedback').length;
 
-    // Tempo médio de feedback em horas
+    // Tempo médio de feedback
     const completedMonitoringsWithDates = monitorings.filter(m => 
       m.status === 'Feedback Concluído' && m.monitoring_date && m.feedback_date
     );
-    let avgFeedbackTimeHours = 0;
+    let avgFeedbackTimeMs = 0;
     if (completedMonitoringsWithDates.length > 0) {
       const totalTimeMs = completedMonitoringsWithDates.reduce((sum, m) => {
         const mDate = new Date(m.monitoring_date);
         const fDate = new Date(m.feedback_date);
         return sum + Math.abs(fDate - mDate);
       }, 0);
-      avgFeedbackTimeHours = Math.round(totalTimeMs / (1000 * 60 * 60) / completedMonitoringsWithDates.length * 10) / 10;
+      avgFeedbackTimeMs = totalTimeMs / completedMonitoringsWithDates.length;
     }
 
     // Cobertura do ciclo atual
@@ -69,7 +80,7 @@ export default function Dashboard({ operators, monitorings, activeCycle, darkMod
       completedFeedbacks,
       opsAguardandoMonitoria,
       opsAguardandoFeedback,
-      avgFeedbackTimeHours,
+      avgFeedbackTimeMs,
       coberturaCiclo
     };
   }, [operators, monitorings, activeCycle]);
@@ -348,7 +359,7 @@ export default function Dashboard({ operators, monitorings, activeCycle, darkMod
         </div>
         <div className="bg-white dark:bg-[#0c0c0f] p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm text-center">
           <p className="text-xs text-zinc-500 dark:text-zinc-400">Tempo Médio Feedback</p>
-          <p className="text-2xl font-bold mt-1 text-zinc-900 dark:text-zinc-100">{kpis.avgFeedbackTimeHours}h</p>
+          <p className="text-xl font-bold mt-1 text-zinc-900 dark:text-zinc-100">{formatDuration(kpis.avgFeedbackTimeMs)}</p>
         </div>
         <div className="bg-white dark:bg-[#0c0c0f] p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm text-center">
           <p className="text-xs text-zinc-500 dark:text-zinc-400">Feedbacks Concluídos</p>

@@ -358,6 +358,12 @@ export default function App() {
 
       const opsToUpsert = [];
       const processedNames = new Set();
+      
+      const normalizeSkill = (s) => {
+        if (!s) return 'Voz';
+        const cleaned = s.trim().toLowerCase();
+        return (cleaned.includes('midia') || cleaned.includes('mídia')) ? 'Mídias' : 'Voz';
+      };
 
       parsedOperators.forEach(op => {
         const supervisor_id = superNameToIdMap[op.supervisor_name] || null;
@@ -370,7 +376,7 @@ export default function App() {
           supervisor_name: op.supervisor_name,
           schedule: op.schedule,
           allocation: op.allocation,
-          skill: op.skill,
+          skill: normalizeSkill(op.skill),
           escala: op.escala,
           active: true,
           status_feedback: existing ? existing.status_feedback : 'Liberado'
