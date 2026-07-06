@@ -7,7 +7,8 @@ import {
   FileSpreadsheet, 
   Settings, 
   Brain,
-  Award
+  Award,
+  ClipboardList
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount }) {
@@ -15,6 +16,7 @@ export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount }) 
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'queue', label: 'Fila Inteligente', icon: UserCheck },
     { id: 'operators', label: 'Operadores', icon: Users },
+    { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
     { id: 'monitors', label: 'Qualidade & Equipes', icon: Award },
     { id: 'intelligence', label: 'Inteligência Analítica', icon: Brain, badge: unreadAlertsCount },
     { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },

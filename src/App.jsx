@@ -11,6 +11,7 @@ import MonitorsSupervisors from './components/MonitorsSupervisors';
 import AnalyticalIntelligence from './components/AnalyticalIntelligence';
 import Reports from './components/Reports';
 import ConfigChecklist from './components/ConfigChecklist';
+import MonitoringsHistory from './components/MonitoringsHistory';
 
 // Modais
 import MonitoringModal from './components/MonitoringModal';
@@ -635,6 +636,19 @@ export default function App() {
                   onExcelUpload={handleExcelUpload}
                   onViewProfile={(op) => setSelectedOperatorForProfile(op)}
                   isLoading={isLoading}
+                />
+              )}
+
+              {activeTab === 'monitorings_history' && (
+                <MonitoringsHistory 
+                  operators={filteredOperators}
+                  monitorings={filteredMonitorings}
+                  monitors={monitors}
+                  supervisors={supervisors}
+                  onEditMonitoring={handleEditMonitoringClick}
+                  onDeleteMonitoring={handleDeleteMonitoring}
+                  activeProfile={activeProfile}
+                  darkMode={darkMode}
                 />
               )}
 

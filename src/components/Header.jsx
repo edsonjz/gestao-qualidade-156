@@ -17,6 +17,7 @@ export default function Header({
       case 'dashboard': return 'Dashboard Principal';
       case 'queue': return 'Painel da Monitora';
       case 'operators': return 'Gestão de Operadores';
+      case 'monitorings_history': return 'Histórico de Monitorias';
       case 'monitors': return 'Monitoras & Supervisores';
       case 'intelligence': return 'Inteligência Analítica (IA)';
       case 'reports': return 'Central de Relatórios';
