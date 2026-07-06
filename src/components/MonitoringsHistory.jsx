@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, Eye, Edit, Trash2, ChevronLeft, ChevronRight, Calendar, User, Award, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Eye, Edit, Trash2, ChevronLeft, ChevronRight, Calendar, User, Award, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
 export default function MonitoringsHistory({ 
   operators = [], 

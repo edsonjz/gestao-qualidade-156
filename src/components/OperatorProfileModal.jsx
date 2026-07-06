@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { X, Calendar, User, TrendingUp, AlertTriangle, FileText, CheckCircle, Info, Edit, Trash2, Award } from 'lucide-react';
+import { X, Calendar, User, TrendingUp, AlertTriangle, FileText, CheckCircle, Info, Edit, Trash2, Award, Eye } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 export default function OperatorProfileModal({ 
