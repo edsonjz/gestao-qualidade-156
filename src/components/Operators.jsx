@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   Plus, 
   Upload, 
+  Download,
+  FileSpreadsheet,
   Search, 
   Edit, 
   Trash2, 
@@ -12,7 +14,7 @@ import {
   RefreshCw,
   Info
 } from 'lucide-react';
-import { parseOperatorsExcel } from '../utils/xlsxParser';
+import { parseOperatorsExcel, exportOperatorsToExcel, generateTemplateExcel } from '../utils/xlsxParser';
 
 export default function Operators({ 
   operators, 
@@ -32,11 +34,15 @@ export default function Operators({
   const [uploading, setUploading] = useState(false);
   const itemsPerPage = 15;
 
-  // 1. Filtragem de dados
+  // 1. Filtragem de dados (Busca por Nome ou Matrícula)
   const filtered = useMemo(() => {
+    const searchLower = search.trim().toLowerCase();
     return operators.filter(o => {
-      // Busca por nome
-      const matchesSearch = o.name.toLowerCase().includes(search.toLowerCase());
+      // Busca por nome ou matrícula
+      const matchesSearch = !searchLower ? true : (
+        (o.name && o.name.toLowerCase().includes(searchLower)) ||
+        (o.matricula && String(o.matricula).toLowerCase().includes(searchLower))
+      );
       
       // Filtro ativo/inativo
       const matchesActive = 
@@ -80,9 +86,9 @@ export default function Operators({
       const parsed = await parseOperatorsExcel(file);
       if (parsed.length > 0) {
         await onExcelUpload(parsed);
-        alert('Planilha importada com sucesso!');
+        alert(`Planilha processada com sucesso! ${parsed.length} colaboradores importados.`);
       } else {
-        alert('Nenhum operador válido encontrado na planilha.');
+        alert('Nenhum colaborador válido encontrado na planilha. Verifique as colunas (Supervisor, Matrícula, Nome).');
       }
     } catch (err) {
       console.error(err);
@@ -93,6 +99,20 @@ export default function Operators({
     }
   };
 
+  // 4. Exportar Colaboradores
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      alert('Nenhum colaborador para exportar.');
+      return;
+    }
+    exportOperatorsToExcel(filtered);
+  };
+
+  // 5. Baixar Modelo de Planilha
+  const handleDownloadTemplate = () => {
+    generateTemplateExcel();
+  };
+
   return (
     <div className="space-y-6">
       
@@ -100,12 +120,32 @@ export default function Operators({
       <div className="bg-white dark:bg-[#0c0c0f] p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider">
-            Listagem de Operadores ({filtered.length})
+            Listagem de Colaboradores ({filtered.length})
           </h3>
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Baixar Modelo */}
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-1.5 bg-[#ffffff] dark:bg-[#18181b] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] text-[#475569] dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold transition-colors shadow-sm"
+              title="Baixar planilha modelo com colunas Supervisor, Matrícula e Nome"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-blue-500" />
+              Baixar Modelo
+            </button>
+
+            {/* Exportar Excel */}
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-1.5 bg-[#ffffff] dark:bg-[#18181b] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] text-[#475569] dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold transition-colors shadow-sm"
+              title="Exportar lista de colaboradores atual para Excel"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-500" />
+              Exportar Excel
+            </button>
+
             {/* Importar Planilha */}
-            <label className="flex items-center gap-1.5 bg-[#ffffff] dark:bg-[#262626] hover:bg-[#f8fafc] dark:hover:bg-zinc-800 text-[#334155] dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-bold transition-colors shadow-sm cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-xs font-semibold transition-colors shadow-sm cursor-pointer select-none">
               {uploading ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : (
@@ -127,19 +167,19 @@ export default function Operators({
               className="flex items-center gap-1.5 bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              Adicionar Novo
+              Novo Colaborador
             </button>
           </div>
         </div>
 
         {/* Filtros */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
-          {/* Busca por Nome */}
+          {/* Busca por Nome ou Matrícula */}
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
             <input
               type="text"
-              placeholder="Buscar operador..."
+              placeholder="Buscar por nome ou matrícula..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -194,34 +234,35 @@ export default function Operators({
         </div>
       </div>
 
-      {/* Tabela de Operadores */}
+      {/* Tabela de Colaboradores */}
       <div className="bg-white dark:bg-[#0c0c0f] rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-zinc-50 dark:bg-zinc-900/40 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
-                <th className="px-6 py-3.5">Nome</th>
-                <th className="px-6 py-3.5">Supervisor</th>
-                <th className="px-6 py-3.5">Turno</th>
-                <th className="px-6 py-3.5">Skill</th>
-                <th className="px-6 py-3.5">Escala</th>
-                <th className="px-6 py-3.5">Alocação</th>
-                <th className="px-6 py-3.5 text-center">Status</th>
-                <th className="px-6 py-3.5 text-center">Situação</th>
-                <th className="px-6 py-3.5 text-right no-print">Ações</th>
+                <th className="px-5 py-3.5">Nome</th>
+                <th className="px-5 py-3.5">Matrícula</th>
+                <th className="px-5 py-3.5">Supervisor</th>
+                <th className="px-5 py-3.5">Turno</th>
+                <th className="px-5 py-3.5">Skill</th>
+                <th className="px-5 py-3.5">Escala</th>
+                <th className="px-5 py-3.5">Alocação</th>
+                <th className="px-5 py-3.5 text-center">Status</th>
+                <th className="px-5 py-3.5 text-center">Situação</th>
+                <th className="px-5 py-3.5 text-right no-print">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm text-zinc-800 dark:text-zinc-200">
               {isLoading ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-10 text-zinc-500 dark:text-zinc-400">
-                    Carregando operadores...
+                  <td colSpan="10" className="text-center py-10 text-zinc-500 dark:text-zinc-400">
+                    Carregando colaboradores...
                   </td>
                 </tr>
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-10 text-zinc-500 dark:text-zinc-400">
-                    Nenhum operador encontrado para os filtros selecionados.
+                  <td colSpan="10" className="text-center py-10 text-zinc-500 dark:text-zinc-400">
+                    Nenhum colaborador encontrado para os filtros selecionados.
                   </td>
                 </tr>
               ) : (
@@ -230,7 +271,7 @@ export default function Operators({
                     key={op.id} 
                     className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors"
                   >
-                    <td className="px-6 py-3.5 font-semibold">
+                    <td className="px-5 py-3.5 font-semibold">
                       <button 
                         onClick={() => onViewProfile(op)}
                         className="hover:underline text-blue-600 dark:text-blue-400 text-left font-bold"
@@ -238,14 +279,17 @@ export default function Operators({
                         {op.name}
                       </button>
                     </td>
-                    <td className="px-6 py-3.5 text-zinc-500 dark:text-zinc-400">
+                    <td className="px-5 py-3.5 text-zinc-600 dark:text-zinc-300 font-mono text-xs">
+                      {op.matricula || <span className="text-zinc-400 italic">--</span>}
+                    </td>
+                    <td className="px-5 py-3.5 text-zinc-500 dark:text-zinc-400">
                       {op.supervisor_name || 'Sem Supervisor'}
                     </td>
-                    <td className="px-6 py-3.5">{op.schedule}</td>
-                    <td className="px-6 py-3.5">{op.skill}</td>
-                    <td className="px-6 py-3.5">{op.escala}</td>
-                    <td className="px-6 py-3.5">{op.allocation}</td>
-                    <td className="px-6 py-3.5 text-center">
+                    <td className="px-5 py-3.5 text-xs">{op.schedule}</td>
+                    <td className="px-5 py-3.5 text-xs">{op.skill}</td>
+                    <td className="px-5 py-3.5 text-xs">{op.escala}</td>
+                    <td className="px-5 py-3.5 text-xs">{op.allocation}</td>
+                    <td className="px-5 py-3.5 text-center">
                       <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold ${
                         op.active 
                           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400' 
@@ -255,7 +299,7 @@ export default function Operators({
                         {op.active ? 'Ativo' : 'Inativo'}
                       </span>
                     </td>
-                    <td className="px-6 py-3.5 text-center">
+                    <td className="px-5 py-3.5 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                         op.status_feedback === 'Aguardando Feedback' 
                           ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' 
@@ -264,7 +308,7 @@ export default function Operators({
                         {op.status_feedback}
                       </span>
                     </td>
-                    <td className="px-6 py-3.5 text-right space-x-2 no-print">
+                    <td className="px-5 py-3.5 text-right space-x-2 no-print">
                       <button
                         onClick={() => onViewProfile(op)}
                         className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-blue-600 hover:text-blue-800 transition-colors"
@@ -298,7 +342,7 @@ export default function Operators({
         {totalPages > 1 && (
           <div className="px-6 py-4 flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/10 no-print">
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              Mostrando pág. <strong>{currentPage}</strong> de {totalPages} ({filtered.length} operadores)
+              Mostrando pág. <strong>{currentPage}</strong> de {totalPages} ({filtered.length} colaboradores)
             </span>
             <div className="flex gap-2">
               <button

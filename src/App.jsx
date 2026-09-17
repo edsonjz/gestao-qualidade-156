@@ -62,6 +62,7 @@ export default function App() {
   const [editingOperator, setEditingOperator] = useState(null);
   const [opFormFields, setOpFormFields] = useState({
     name: '',
+    matricula: '',
     supervisor_id: '',
     schedule: '08:00 - 17:12',
     allocation: 'Presencial',
@@ -139,7 +140,7 @@ export default function App() {
       // d. Operadores
       const { data: operatorsData } = await supabase
         .from('q_operators')
-        .select('id, name, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback, last_monitoring_at, last_feedback_at, assigned_monitor_id, assigned_monitor_name')
+        .select('id, name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback, last_monitoring_at, last_feedback_at, assigned_monitor_id, assigned_monitor_name')
         .order('name');
       setOperators(operatorsData || []);
 
@@ -170,7 +171,8 @@ export default function App() {
     const superObj = supervisors.find(s => s.id === opFormFields.supervisor_id);
     const monitorObj = monitors.find(m => m.id === opFormFields.assigned_monitor_id);
     const opData = {
-      name: opFormFields.name,
+      name: opFormFields.name.trim(),
+      matricula: opFormFields.matricula ? opFormFields.matricula.trim() : null,
       supervisor_id: opFormFields.supervisor_id || null,
       supervisor_name: superObj ? superObj.name : 'Sem Supervisor',
       schedule: opFormFields.schedule,
@@ -209,13 +211,14 @@ export default function App() {
   const handleEditOperatorClick = (op) => {
     setEditingOperator(op);
     setOpFormFields({
-      name: op.name,
+      name: op.name || '',
+      matricula: op.matricula || '',
       supervisor_id: op.supervisor_id || '',
-      schedule: op.schedule,
-      allocation: op.allocation,
-      skill: op.skill,
-      escala: op.escala,
-      active: op.active,
+      schedule: op.schedule || '08:00 - 17:12',
+      allocation: op.allocation || 'Presencial',
+      skill: op.skill || 'Voz',
+      escala: op.escala || '6x1',
+      active: op.active !== undefined ? op.active : true,
       assigned_monitor_id: op.assigned_monitor_id || ''
     });
     setShowOpForm(true);
@@ -350,13 +353,17 @@ export default function App() {
       // b. Processar Operadores
       const { data: currentOps } = await supabase
         .from('q_operators')
-        .select('id, name, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback');
-      const currentOpsMap = {};
-      currentOps.forEach(o => {
-        currentOpsMap[o.name] = o;
+        .select('id, name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback');
+      
+      const currentOpsByName = {};
+      const currentOpsByMatricula = {};
+      (currentOps || []).forEach(o => {
+        if (o.name) currentOpsByName[o.name.trim().toLowerCase()] = o;
+        if (o.matricula) currentOpsByMatricula[String(o.matricula).trim().toLowerCase()] = o;
       });
 
       const opsToUpsert = [];
+      const processedIds = new Set();
       const processedNames = new Set();
       
       const normalizeSkill = (s) => {
@@ -367,29 +374,46 @@ export default function App() {
 
       parsedOperators.forEach(op => {
         const supervisor_id = superNameToIdMap[op.supervisor_name] || null;
-        const existing = currentOpsMap[op.name];
+        
+        // Identificar se já existe por matrícula ou por nome
+        const normName = (op.name || '').trim().toLowerCase();
+        const normMatricula = (op.matricula || '').trim().toLowerCase();
+        
+        const existing = (normMatricula && currentOpsByMatricula[normMatricula]) || (normName && currentOpsByName[normName]) || null;
 
-        opsToUpsert.push({
-          id: existing ? existing.id : undefined,
+        const opRecord = {
           name: op.name,
+          matricula: op.matricula || (existing ? existing.matricula : null),
           supervisor_id,
-          supervisor_name: op.supervisor_name,
-          schedule: op.schedule,
-          allocation: op.allocation,
+          supervisor_name: op.supervisor_name || 'Geral',
+          schedule: op.schedule || '08:00 - 17:12',
+          allocation: op.allocation || 'Presencial',
           skill: normalizeSkill(op.skill),
-          escala: op.escala,
+          escala: op.escala || '6x1',
           active: true,
           status_feedback: existing ? existing.status_feedback : 'Liberado'
-        });
-        processedNames.add(op.name);
+        };
+
+        if (existing && existing.id) {
+          opRecord.id = existing.id;
+          processedIds.add(existing.id);
+        }
+
+        opsToUpsert.push(opRecord);
+        processedNames.add(normName);
       });
 
-      // c. Inativar operadores ausentes
-      const opsToInactivate = currentOps.filter(o => o.active && !processedNames.has(o.name));
+      // c. Inativar operadores ausentes na planilha
+      const opsToInactivate = (currentOps || []).filter(o => 
+        o.active && 
+        !processedIds.has(o.id) && 
+        !processedNames.has((o.name || '').trim().toLowerCase())
+      );
       opsToInactivate.forEach(o => {
         opsToUpsert.push({
           id: o.id,
           name: o.name,
+          matricula: o.matricula,
           supervisor_id: o.supervisor_id,
           supervisor_name: o.supervisor_name,
           schedule: o.schedule,
@@ -627,6 +651,7 @@ export default function App() {
                     setEditingOperator(null);
                     setOpFormFields({
                       name: '',
+                      matricula: '',
                       supervisor_id: supervisors[0]?.id || '',
                       schedule: '08:00 - 17:12',
                       allocation: 'Presencial',
@@ -755,15 +780,27 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSaveOperator} className="p-6 space-y-4 text-xs">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-500">Nome Completo</label>
-                <input
-                  type="text"
-                  required
-                  value={opFormFields.name}
-                  onChange={(e) => setOpFormFields({ ...opFormFields, name: e.target.value })}
-                  className="w-full bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
-                />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <label className="font-semibold text-zinc-500">Nome Completo</label>
+                  <input
+                    type="text"
+                    required
+                    value={opFormFields.name}
+                    onChange={(e) => setOpFormFields({ ...opFormFields, name: e.target.value })}
+                    className="w-full bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-500">Matrícula</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 156001"
+                    value={opFormFields.matricula || ''}
+                    onChange={(e) => setOpFormFields({ ...opFormFields, matricula: e.target.value })}
+                    className="w-full bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
