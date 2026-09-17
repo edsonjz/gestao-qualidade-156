@@ -315,55 +315,192 @@ export default function App() {
     }
   };
 
-  // 4. CRUD Supervisores
-  const handleAddSupervisor = async (name) => {
+  // 4. CRUD Supervisores (com credenciais e vínculos)
+  const handleSaveSupervisor = async ({ id, name, email, password }) => {
     try {
-      const { error } = await supabase
-        .from('q_supervisors')
-        .insert([{ name, active: true }]);
-      if (error) throw error;
-      fetchStaticData();
+      let supervisorId = id;
+      if (id) {
+        const oldSuper = supervisors.find(s => s.id === id);
+        const { error: updErr } = await supabase
+          .from('q_supervisors')
+          .update({ name })
+          .eq('id', id);
+        if (updErr) throw updErr;
+
+        if (oldSuper && oldSuper.name !== name) {
+          await supabase
+            .from('q_operators')
+            .update({ supervisor_name: name })
+            .eq('supervisor_id', id);
+        }
+      } else {
+        const { data: newSuper, error: insErr } = await supabase
+          .from('q_supervisors')
+          .insert([{ name }])
+          .select()
+          .single();
+        if (insErr) throw insErr;
+        supervisorId = newSuper.id;
+      }
+
+      // Se informou e-mail para credencial
+      if (email) {
+        const existingUser = users.find(u => u.email?.toLowerCase() === email.toLowerCase() || u.supervisor_id === supervisorId);
+
+        if (existingUser) {
+          await supabase
+            .from('q_users')
+            .update({
+              name,
+              email,
+              role: 'supervisor',
+              supervisor_id: supervisorId,
+              active: true
+            })
+            .eq('id', existingUser.id);
+        } else {
+          let authUserId = null;
+          if (password && password.length >= 6) {
+            const { data: authData, error: authErr } = await supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                data: { name, role: 'supervisor' }
+              }
+            });
+            if (authErr) console.warn('Aviso no Supabase Auth:', authErr);
+            authUserId = authData?.user?.id || null;
+          }
+
+          await supabase
+            .from('q_users')
+            .insert([{
+              auth_user_id: authUserId,
+              email,
+              name,
+              role: 'supervisor',
+              supervisor_id: supervisorId,
+              active: true
+            }]);
+        }
+      }
+
+      await fetchStaticData();
+      await fetchData();
+      await fetchUsers();
     } catch (err) {
-      console.error('Erro ao adicionar supervisor:', err);
+      console.error('Erro ao salvar supervisor:', err);
+      throw err;
     }
   };
 
   const handleDeleteSupervisor = async (id) => {
+    if (!window.confirm('Tem certeza que deseja excluir este supervisor? Os operadores associados ficarão sem supervisor e a credencial vinculada será desfeita.')) {
+      return;
+    }
     try {
+      await supabase.from('q_users').delete().eq('supervisor_id', id);
+      await supabase.from('q_operators').update({ supervisor_id: null, supervisor_name: 'Sem Supervisor' }).eq('supervisor_id', id);
       const { error } = await supabase
         .from('q_supervisors')
         .delete()
         .eq('id', id);
       if (error) throw error;
-      fetchStaticData();
+      await fetchStaticData();
+      await fetchData();
+      await fetchUsers();
     } catch (err) {
       console.error('Erro ao excluir supervisor:', err);
+      alert('Erro ao excluir supervisor: ' + (err.message || ''));
     }
   };
 
-  // 5. CRUD Monitores
-  const handleAddMonitor = async (name, daily_target = 5) => {
+  // 5. CRUD Monitores (com metas e credenciais)
+  const handleSaveMonitor = async ({ id, name, daily_target, email, password }) => {
     try {
-      const { error } = await supabase
-        .from('q_monitors')
-        .insert([{ name, daily_target, active: true }]);
-      if (error) throw error;
-      fetchStaticData();
+      let monitorId = id;
+      if (id) {
+        const { error: updErr } = await supabase
+          .from('q_monitors')
+          .update({ name, daily_target })
+          .eq('id', id);
+        if (updErr) throw updErr;
+      } else {
+        const { data: newMon, error: insErr } = await supabase
+          .from('q_monitors')
+          .insert([{ name, daily_target }])
+          .select()
+          .single();
+        if (insErr) throw insErr;
+        monitorId = newMon.id;
+      }
+
+      // Se informou e-mail para credencial
+      if (email) {
+        const existingUser = users.find(u => u.email?.toLowerCase() === email.toLowerCase() || u.monitor_id === monitorId);
+
+        if (existingUser) {
+          await supabase
+            .from('q_users')
+            .update({
+              name,
+              email,
+              role: 'monitor',
+              monitor_id: monitorId,
+              active: true
+            })
+            .eq('id', existingUser.id);
+        } else {
+          let authUserId = null;
+          if (password && password.length >= 6) {
+            const { data: authData, error: authErr } = await supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                data: { name, role: 'monitor' }
+              }
+            });
+            if (authErr) console.warn('Aviso no Supabase Auth:', authErr);
+            authUserId = authData?.user?.id || null;
+          }
+
+          await supabase
+            .from('q_users')
+            .insert([{
+              auth_user_id: authUserId,
+              email,
+              name,
+              role: 'monitor',
+              monitor_id: monitorId,
+              active: true
+            }]);
+        }
+      }
+
+      await fetchStaticData();
+      await fetchUsers();
     } catch (err) {
-      console.error('Erro ao adicionar monitor:', err);
+      console.error('Erro ao salvar monitora:', err);
+      throw err;
     }
   };
 
   const handleDeleteMonitor = async (id) => {
+    if (!window.confirm('Tem certeza que deseja excluir esta monitora? As credenciais de acesso vinculadas também serão excluídas.')) {
+      return;
+    }
     try {
+      await supabase.from('q_users').delete().eq('monitor_id', id);
       const { error } = await supabase
         .from('q_monitors')
         .delete()
         .eq('id', id);
       if (error) throw error;
-      fetchStaticData();
+      await fetchStaticData();
+      await fetchUsers();
     } catch (err) {
       console.error('Erro ao excluir monitor:', err);
+      alert('Erro ao excluir monitora: ' + (err.message || ''));
     }
   };
 
@@ -873,10 +1010,11 @@ export default function App() {
                   monitorings={filteredMonitorings}
                   monitors={monitors}
                   supervisors={supervisors}
+                  users={users}
                   activeCycle={activeCycle}
-                  onAddMonitor={handleAddMonitor}
+                  onSaveMonitor={handleSaveMonitor}
                   onDeleteMonitor={handleDeleteMonitor}
-                  onAddSupervisor={handleAddSupervisor}
+                  onSaveSupervisor={handleSaveSupervisor}
                   onDeleteSupervisor={handleDeleteSupervisor}
                 />
               )}
