@@ -4,9 +4,10 @@ import {
   Play, 
   Clock, 
   AlertCircle, 
-  RefreshCw,
-  CheckCircle,
-  HelpCircle
+  RefreshCw, 
+  CheckCircle, 
+  HelpCircle,
+  Lock
 } from 'lucide-react';
 import { sortSmartQueue } from '../utils/distribution';
 
@@ -16,6 +17,7 @@ export default function SmartQueue({
   activeCycle, 
   onStartMonitoring, 
   onOpenFeedback,
+  currentMonitor,
   isLoading 
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,6 +40,7 @@ export default function SmartQueue({
     return operators.filter(o => 
       o.active && (
         o.name.toLowerCase().includes(query) ||
+        (o.matricula && String(o.matricula).toLowerCase().includes(query)) ||
         (o.supervisor_name && o.supervisor_name.toLowerCase().includes(query)) ||
         o.skill.toLowerCase().includes(query)
       )
@@ -78,35 +81,34 @@ export default function SmartQueue({
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
             <input
               type="text"
-              placeholder="Pesquisar por Nome, Supervisor, Turno ou Skill..."
+              placeholder="Digite o nome, matrícula ou supervisor do operador..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-zinc-950 dark:text-zinc-100 transition-all"
+              className="w-full bg-[#ffffff] dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100 transition-all"
             />
           </div>
         </div>
 
-        {/* Lista Principal da Fila ou Resultados de Busca */}
+        {/* Lista da Fila ou Resultados da Busca */}
         <div className="bg-white dark:bg-[#0c0c0f] rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/10">
+          <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/10">
             <div>
               <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider">
-                {searchQuery ? 'Resultados da Busca' : 'Fila Inteligente do Dia'}
+                {searchQuery ? `Resultados da Busca (${searchResults.length})` : 'Fila de Distribuição Priorizada'}
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {searchQuery ? 'Selecione qualquer operador ativo para monitorar' : 'Sugestão ordenada pelo algoritmo de equidade'}
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                {searchQuery 
+                  ? 'Selecione qualquer colaborador retornado na pesquisa.' 
+                  : 'Ordem calculada por equidade de supervisão, tempo sem avaliação e meta.'}
               </p>
             </div>
-            {isLoading && (
-              <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />
-            )}
           </div>
 
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800 overflow-x-auto">
+          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {searchQuery ? (
               searchResults.length === 0 ? (
                 <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-sm">
-                  Nenhum operador ativo encontrado para "{searchQuery}".
+                  Nenhum operador encontrado para "{searchQuery}".
                 </div>
               ) : (
                 searchResults.map((op, idx) => (
@@ -114,7 +116,8 @@ export default function SmartQueue({
                     key={op.id} 
                     op={op} 
                     idx={idx + 1} 
-                    onStartMonitoring={onStartMonitoring} 
+                    onStartMonitoring={onStartMonitoring}
+                    currentMonitorId={currentMonitor?.id}
                   />
                 ))
               )
@@ -130,6 +133,7 @@ export default function SmartQueue({
                     op={op} 
                     idx={idx + 1} 
                     onStartMonitoring={onStartMonitoring} 
+                    currentMonitorId={currentMonitor?.id}
                   />
                 ))
               )
@@ -219,9 +223,18 @@ export default function SmartQueue({
   );
 }
 
-// Sub-componente de Linha da Fila
-function OperatorRow({ op, idx, onStartMonitoring }) {
+// Sub-componente de Linha da Fila com verificação de concorrência (Lock)
+function OperatorRow({ op, idx, onStartMonitoring, currentMonitorId }) {
   const isBlocked = op.status_feedback === 'Aguardando Feedback';
+
+  // Verificação de Lock de Concorrência (< 30 minutos)
+  const isLocked = Boolean(
+    op.locked_at && 
+    (new Date() - new Date(op.locked_at)) < 30 * 60 * 1000
+  );
+
+  const isLockedByOther = isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id !== currentMonitorId;
+  const isLockedByMe = isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id === currentMonitorId;
 
   return (
     <div className={`flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-colors ${
@@ -235,6 +248,11 @@ function OperatorRow({ op, idx, onStartMonitoring }) {
         <div>
           <div className="flex items-center gap-2">
             <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{op.name}</h4>
+            {op.matricula && (
+              <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                ({op.matricula})
+              </span>
+            )}
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
               op.allocation === 'Home Office' 
                 ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' 
@@ -242,6 +260,14 @@ function OperatorRow({ op, idx, onStartMonitoring }) {
             }`}>
               {op.allocation}
             </span>
+
+            {/* Badge de Bloqueio Concorrente */}
+            {isLockedByOther && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse">
+                <Lock className="w-3 h-3" />
+                Em avaliação por {op.locked_by_monitor_name || 'outra monitora'}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
             <span>Sup: <strong>{op.supervisor_name}</strong></span>
@@ -270,13 +296,26 @@ function OperatorRow({ op, idx, onStartMonitoring }) {
           >
             Bloqueado
           </button>
+        ) : isLockedByOther ? (
+          <button 
+            disabled 
+            title={`Bloqueado por ${op.locked_by_monitor_name || 'outra monitora'}`}
+            className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-bold py-1.5 px-3 rounded-lg cursor-not-allowed border border-amber-200 dark:border-amber-900"
+          >
+            <Lock className="w-3 h-3" />
+            Em Uso
+          </button>
         ) : (
           <button 
             onClick={() => onStartMonitoring(op)}
-            className="flex items-center gap-1.5 bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-colors shadow-sm"
+            className={`flex items-center gap-1.5 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-colors shadow-sm ${
+              isLockedByMe 
+                ? 'bg-amber-600 hover:bg-amber-700' 
+                : 'bg-[#059669] hover:bg-[#047857]'
+            }`}
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            Avaliar
+            {isLockedByMe ? 'Continuar' : 'Avaliar'}
           </button>
         )}
       </div>

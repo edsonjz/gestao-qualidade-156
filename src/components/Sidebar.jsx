@@ -8,25 +8,63 @@ import {
   Settings, 
   Brain,
   Award,
-  ClipboardList
+  ClipboardList,
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount }) {
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'queue', label: 'Fila Inteligente', icon: UserCheck },
-    { id: 'operators', label: 'Operadores', icon: Users },
-    { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
-    { id: 'monitors', label: 'Qualidade & Equipes', icon: Award },
-    { id: 'intelligence', label: 'Inteligência Analítica', icon: Brain, badge: unreadAlertsCount },
-    { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },
-    { id: 'config', label: 'Checklist de Qualidade', icon: Settings },
-  ];
+export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount, userRole = 'admin' }) {
+  
+  // Lista de menus filtrada conforme o cargo / role do usuário autenticado
+  const getMenuItems = () => {
+    // 1. Operador: Somente seu portal de monitorias e feedbacks
+    if (userRole === 'operador') {
+      return [
+        { id: 'portal', label: 'Minhas Avaliações', icon: Award },
+      ];
+    }
+
+    // 2. Supervisor: Visão da sua equipe, dashboard, feedbacks e relatórios
+    if (userRole === 'supervisor') {
+      return [
+        { id: 'dashboard', label: 'Dashboard da Equipe', icon: LayoutDashboard },
+        { id: 'queue', label: 'Fila de Feedbacks', icon: UserCheck },
+        { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
+        { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },
+      ];
+    }
+
+    // 3. Monitor(a): Fila de monitoria, Dashboard, Operadores, Histórico, Checklist
+    if (userRole === 'monitor') {
+      return [
+        { id: 'queue', label: 'Fila de Monitoria', icon: UserCheck },
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'operators', label: 'Operadores', icon: Users },
+        { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
+        { id: 'config', label: 'Checklist de Qualidade', icon: Settings },
+      ];
+    }
+
+    // 4. Administrador (Master ou admin): Acesso completo
+    return [
+      { id: 'dashboard', label: 'Dashboard Geral', icon: LayoutDashboard },
+      { id: 'queue', label: 'Fila Inteligente', icon: UserCheck },
+      { id: 'operators', label: 'Operadores', icon: Users },
+      { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
+      { id: 'monitors', label: 'Qualidade & Equipes', icon: Award },
+      { id: 'intelligence', label: 'Inteligência Analítica', icon: Brain, badge: unreadAlertsCount },
+      { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },
+      { id: 'config', label: 'Checklist de Qualidade', icon: Settings },
+      { id: 'users', label: 'Gestão de Acessos', icon: ShieldCheck },
+    ];
+  };
+
+  const menuItems = getMenuItems();
 
   return (
-    <aside className="w-64 bg-white dark:bg-[#0c0c0f] border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-screen no-print">
+    <aside className="w-64 bg-white dark:bg-[#0c0c0f] border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-screen no-print shrink-0">
       <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-extrabold text-lg">
+        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-extrabold text-lg shadow-sm">
           Q
         </div>
         <div>
@@ -46,7 +84,7 @@ export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount }) 
               onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 isActive 
-                  ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30' 
+                  ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30 font-semibold' 
                   : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:text-zinc-900 dark:hover:text-zinc-200 border border-transparent'
               }`}
             >
@@ -64,9 +102,15 @@ export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount }) 
         })}
       </nav>
 
-      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
-        <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500 justify-center">
-          <span>Versão 1.2.0 (IA)</span>
+      {/* Rodapé da barra lateral */}
+      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="p-3 bg-zinc-50 dark:bg-zinc-900/40 rounded-xl border border-zinc-200/60 dark:border-zinc-800/60">
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+            Perfil Atual:
+          </p>
+          <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 capitalize">
+            {userRole === 'admin' ? 'Administrador' : userRole === 'monitor' ? 'Monitor(a)' : userRole === 'supervisor' ? 'Supervisor(a)' : 'Operador'}
+          </span>
         </div>
       </div>
     </aside>

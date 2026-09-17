@@ -12,6 +12,8 @@ import AnalyticalIntelligence from './components/AnalyticalIntelligence';
 import Reports from './components/Reports';
 import ConfigChecklist from './components/ConfigChecklist';
 import MonitoringsHistory from './components/MonitoringsHistory';
+import UserManagement from './components/UserManagement';
+import OperatorPortal from './components/OperatorPortal';
 
 // Modais
 import MonitoringModal from './components/MonitoringModal';
@@ -24,22 +26,14 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Estados de Usuário e RBAC
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState('admin'); // 'admin', 'monitor', 'supervisor', 'operador'
+  const [users, setUsers] = useState([]);
+
   // Estados de Interface
   const [activeTab, setActiveTab] = useState('dashboard');
   const [darkMode, setDarkMode] = useState(false);
-  const [activeProfile, setActiveProfile] = useState(() => {
-    try {
-      const saved = localStorage.getItem('q_active_profile');
-      return saved ? JSON.parse(saved) : { id: 'Admin', name: 'Administrador (Admin)', role: 'Admin' };
-    } catch (e) {
-      return { id: 'Admin', name: 'Administrador (Admin)', role: 'Admin' };
-    }
-  });
-
-  // Salvar perfil selecionado no navegador
-  useEffect(() => {
-    localStorage.setItem('q_active_profile', JSON.stringify(activeProfile));
-  }, [activeProfile]);
 
   // Estados de Dados
   const [operators, setOperators] = useState([]);
@@ -72,20 +66,76 @@ export default function App() {
     assigned_monitor_id: ''
   });
 
-  // 0. Monitorar Sessão do Supabase
+  // 0. Carregar Perfil do Usuário Autenticado
+  const fetchCurrentUserProfile = useCallback(async (currentSession) => {
+    if (!currentSession?.user) {
+      setCurrentUser(null);
+      setUserRole('admin');
+      return;
+    }
+
+    const email = currentSession.user.email?.toLowerCase();
+    
+    // O e-mail edson_jz@hotmail.com é SEMPRE reconhecido como Administrador Master
+    if (email === 'edson_jz@hotmail.com') {
+      const masterProfile = {
+        id: currentSession.user.id,
+        email: email,
+        name: 'Edson Azevedo',
+        role: 'admin'
+      };
+      setCurrentUser(masterProfile);
+      setUserRole('admin');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('q_users')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (data && data.active !== false) {
+        setCurrentUser(data);
+        setUserRole(data.role || 'monitor');
+        if (data.role === 'operador') {
+          setActiveTab('portal');
+        }
+      } else {
+        // Fallback para role nos metadados ou monitor
+        const roleFromMeta = currentSession.user.user_metadata?.role || 'monitor';
+        const profile = {
+          id: currentSession.user.id,
+          email: email,
+          name: currentSession.user.user_metadata?.name || email.split('@')[0],
+          role: roleFromMeta
+        };
+        setCurrentUser(profile);
+        setUserRole(roleFromMeta);
+        if (roleFromMeta === 'operador') {
+          setActiveTab('portal');
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar perfil do usuário:', err);
+    }
+  }, []);
+
+  // Monitorar Sessão do Supabase
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      fetchCurrentUserProfile(currentSession).finally(() => setAuthLoading(false));
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setAuthLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      fetchCurrentUserProfile(currentSession).finally(() => setAuthLoading(false));
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchCurrentUserProfile]);
 
   // 1. Alternância de Modo Escuro
   useEffect(() => {
@@ -122,7 +172,7 @@ export default function App() {
         .order('name');
       setSupervisors(supervisorsData || []);
 
-      // f. Itens do Checklist
+      // d. Itens do Checklist
       const { data: checklistData } = await supabase
         .from('q_checklist_items')
         .select('id, label, weight')
@@ -134,20 +184,46 @@ export default function App() {
     }
   }, []);
 
+  // Carregar lista de usuários para o Admin
+  const fetchUsers = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('q_users')
+        .select('*')
+        .order('name');
+
+      const masterUser = {
+        id: 'master-admin-entry',
+        email: 'edson_jz@hotmail.com',
+        name: 'Edson Azevedo',
+        role: 'admin',
+        active: true
+      };
+
+      const userList = data ? [...data] : [];
+      if (!userList.some(u => u.email === 'edson_jz@hotmail.com')) {
+        userList.unshift(masterUser);
+      }
+      setUsers(userList);
+    } catch (err) {
+      console.warn('Tabela q_users ainda não criada ou inacessível:', err);
+    }
+  }, []);
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // d. Operadores
+      // d. Operadores (incluindo campos de lock e matrícula)
       const { data: operatorsData } = await supabase
         .from('q_operators')
-        .select('id, name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback, last_monitoring_at, last_feedback_at, assigned_monitor_id, assigned_monitor_name')
+        .select('id, name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback, last_monitoring_at, last_feedback_at, assigned_monitor_id, assigned_monitor_name, locked_by_monitor_id, locked_by_monitor_name, locked_at')
         .order('name');
       setOperators(operatorsData || []);
 
       // e. Monitorias
       const { data: monitoringsData } = await supabase
         .from('q_monitorings')
-        .select('id, operator_id, monitor_id, cycle_id, score, monitoring_date, status, feedback_date, feedback_notes, checklist, is_ncg, q_monitors(name), q_operators(name, supervisor_name, schedule, allocation, skill, escala)')
+        .select('id, operator_id, monitor_id, cycle_id, score, monitoring_date, status, feedback_date, feedback_notes, checklist, is_ncg, q_monitors(name), q_operators(name, supervisor_name, schedule, allocation, skill, escala, matricula)')
         .order('monitoring_date', { ascending: false });
       setMonitorings(monitoringsData || []);
 
@@ -162,8 +238,9 @@ export default function App() {
     if (session) {
       fetchStaticData();
       fetchData();
+      fetchUsers();
     }
-  }, [fetchStaticData, fetchData, session]);
+  }, [fetchStaticData, fetchData, fetchUsers, session]);
 
   // 3. CRUD Operadores
   const handleSaveOperator = async (e) => {
@@ -204,7 +281,7 @@ export default function App() {
       fetchData();
     } catch (err) {
       console.error('Erro ao salvar operador:', err);
-      alert('Erro ao salvar operador. Certifique-se de que o nome é único.');
+      alert('Erro ao salvar operador: ' + (err.message || JSON.stringify(err)));
     }
   };
 
@@ -243,17 +320,15 @@ export default function App() {
     try {
       const { error } = await supabase
         .from('q_supervisors')
-        .insert([{ name }]);
+        .insert([{ name, active: true }]);
       if (error) throw error;
       fetchStaticData();
-      fetchData();
     } catch (err) {
       console.error('Erro ao adicionar supervisor:', err);
     }
   };
 
   const handleDeleteSupervisor = async (id) => {
-    if (!confirm('Deseja excluir este supervisor?')) return;
     try {
       const { error } = await supabase
         .from('q_supervisors')
@@ -261,28 +336,25 @@ export default function App() {
         .eq('id', id);
       if (error) throw error;
       fetchStaticData();
-      fetchData();
     } catch (err) {
       console.error('Erro ao excluir supervisor:', err);
     }
   };
 
-  // 5. CRUD Monitoras
-  const handleAddMonitor = async (name, target) => {
+  // 5. CRUD Monitores
+  const handleAddMonitor = async (name, daily_target = 5) => {
     try {
       const { error } = await supabase
         .from('q_monitors')
-        .insert([{ name, daily_target: target }]);
+        .insert([{ name, daily_target, active: true }]);
       if (error) throw error;
       fetchStaticData();
-      fetchData();
     } catch (err) {
-      console.error('Erro ao adicionar monitora:', err);
+      console.error('Erro ao adicionar monitor:', err);
     }
   };
 
   const handleDeleteMonitor = async (id) => {
-    if (!confirm('Deseja excluir esta monitora?')) return;
     try {
       const { error } = await supabase
         .from('q_monitors')
@@ -290,28 +362,25 @@ export default function App() {
         .eq('id', id);
       if (error) throw error;
       fetchStaticData();
-      fetchData();
     } catch (err) {
-      console.error('Erro ao excluir monitora:', err);
+      console.error('Erro ao excluir monitor:', err);
     }
   };
 
-  // 6. CRUD Itens do Checklist
+  // 6. CRUD Checklist
   const handleAddChecklistItem = async (label, weight) => {
     try {
       const { error } = await supabase
         .from('q_checklist_items')
-        .insert([{ label, weight }]);
+        .insert([{ label, weight, active: true }]);
       if (error) throw error;
       fetchStaticData();
     } catch (err) {
-      console.error('Erro ao adicionar critério:', err);
-      alert('Cuidado: Nome do critério já cadastrado.');
+      console.error('Erro ao adicionar item de checklist:', err);
     }
   };
 
   const handleDeleteChecklistItem = async (id) => {
-    if (!confirm('Deseja excluir este critério do checklist padrão?')) return;
     try {
       const { error } = await supabase
         .from('q_checklist_items')
@@ -331,7 +400,7 @@ export default function App() {
       // a. Criar supervisores novos
       const uniqueSuperNames = [...new Set(parsedOperators.map(o => o.supervisor_name).filter(Boolean))];
       const { data: currentSupers } = await supabase.from('q_supervisors').select('id, name');
-      const currentSuperNames = currentSupers.map(s => s.name);
+      const currentSuperNames = (currentSupers || []).map(s => s.name);
       
       const newSuperNames = uniqueSuperNames.filter(name => !currentSuperNames.includes(name));
       if (newSuperNames.length > 0) {
@@ -339,14 +408,14 @@ export default function App() {
           .from('q_supervisors')
           .insert(newSuperNames.map(name => ({ name })))
           .select('id, name');
-        if (insertedSupers) {
+        if (insertedSupers && currentSupers) {
           currentSupers.push(...insertedSupers);
         }
       }
 
       // Mapear nome de supervisor para ID
       const superNameToIdMap = {};
-      currentSupers.forEach(s => {
+      (currentSupers || []).forEach(s => {
         superNameToIdMap[s.name] = s.id;
       });
 
@@ -454,9 +523,80 @@ export default function App() {
     }
   };
 
-  // 8. Salvar monitoria (criar ou editar)
+  // 8. Iniciar Monitoria com Trava de Concorrência (Lock de 30 min)
+  const activeMonitorObj = useMemo(() => {
+    if (currentUser?.monitor_id) {
+      const mon = monitors.find(m => m.id === currentUser.monitor_id);
+      if (mon) return mon;
+    }
+    const byName = monitors.find(m => m.name.toLowerCase() === currentUser?.name?.toLowerCase());
+    if (byName) return byName;
+    return monitors[0] || { id: '00000000-0000-0000-0000-000000000000', name: currentUser?.name || 'Monitora' };
+  }, [monitors, currentUser]);
+
+  const handleStartMonitoring = async (op) => {
+    // Verificar se já está bloqueado por outra monitora nos últimos 30 min
+    const isLocked = Boolean(
+      op.locked_at && 
+      (new Date() - new Date(op.locked_at)) < 30 * 60 * 1000
+    );
+    const activeMonId = activeMonitorObj?.id;
+
+    if (isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id !== activeMonId) {
+      alert(`Atenção: O operador ${op.name} já está em processo de avaliação por ${op.locked_by_monitor_name || 'outra monitora'} neste momento.\n\nPara evitar duplicidade de avaliação simultânea, selecione outro operador.`);
+      return;
+    }
+
+    try {
+      // Registrar trava no Supabase
+      await supabase.from('q_operators').update({
+        locked_by_monitor_id: activeMonId,
+        locked_by_monitor_name: activeMonitorObj?.name || currentUser?.name || 'Monitora',
+        locked_at: new Date().toISOString()
+      }).eq('id', op.id);
+
+      // Atualizar no estado local
+      setOperators(prev => prev.map(o => o.id === op.id ? {
+        ...o,
+        locked_by_monitor_id: activeMonId,
+        locked_by_monitor_name: activeMonitorObj?.name || currentUser?.name || 'Monitora',
+        locked_at: new Date().toISOString()
+      } : o));
+
+      setSelectedOperatorForMonitoring(op);
+    } catch (err) {
+      console.warn('Aviso ao registrar trava de concorrência:', err);
+      setSelectedOperatorForMonitoring(op);
+    }
+  };
+
+  // Liberar trava ao fechar modal de monitoria
+  const handleCloseMonitoringModal = async () => {
+    if (selectedOperatorForMonitoring) {
+      const opId = selectedOperatorForMonitoring.id;
+      try {
+        await supabase.from('q_operators').update({
+          locked_by_monitor_id: null,
+          locked_by_monitor_name: null,
+          locked_at: null
+        }).eq('id', opId);
+
+        setOperators(prev => prev.map(o => o.id === opId ? {
+          ...o,
+          locked_by_monitor_id: null,
+          locked_by_monitor_name: null,
+          locked_at: null
+        } : o));
+      } catch (e) {
+        console.warn('Erro ao liberar trava do operador:', e);
+      }
+    }
+    setSelectedOperatorForMonitoring(null);
+    setEditingMonitoring(null);
+  };
+
+  // Salvar monitoria (criar ou editar)
   const handleSaveMonitoring = async (payload) => {
-    // Validar se ciclo e monitora estão corretos para evitar rejeição por chaves estrangeiras no banco
     if (!payload.cycle_id) {
       alert('Erro: Nenhum ciclo ativo foi encontrado. Crie um ciclo na aba "Configurações" antes de realizar monitorias.');
       return;
@@ -467,7 +607,6 @@ export default function App() {
     }
 
     try {
-      // Remover colunas calculadas/geradas pelo banco de dados para evitar erro de inserção/update
       const { is_ncg, ...dbPayload } = payload;
 
       if (dbPayload.id) {
@@ -490,6 +629,19 @@ export default function App() {
         if (error) throw error;
       }
       
+      // Liberar trava do operador no Supabase
+      if (selectedOperatorForMonitoring) {
+        try {
+          await supabase.from('q_operators').update({
+            locked_by_monitor_id: null,
+            locked_by_monitor_name: null,
+            locked_at: null
+          }).eq('id', selectedOperatorForMonitoring.id);
+        } catch (e) {
+          console.warn('Aviso ao liberar lock pós salvamento:', e);
+        }
+      }
+
       setSelectedOperatorForMonitoring(null);
       setEditingMonitoring(null);
       fetchData();
@@ -525,7 +677,6 @@ export default function App() {
   // 9. Concluir feedback e liberar operador
   const handleSaveFeedback = async (payload) => {
     try {
-      // Atualiza monitoria
       const { error: monError } = await supabase
         .from('q_monitorings')
         .update({
@@ -548,31 +699,34 @@ export default function App() {
     try {
       await supabase.auth.signOut();
       setSession(null);
+      setCurrentUser(null);
+      setUserRole('admin');
     } catch (err) {
       console.error('Erro ao sair do sistema:', err);
     }
   };
 
-  // 10. Mapeamento de Monitora Logada
-  // Clarice e Simone são cadastradas como Monitora 1 e Monitora 2 padrão no banco de dados.
-  // Vamos buscar a correspondente.
-  const activeMonitorObj = useMemo(() => {
-    return monitors.find(m => m.id === activeProfile.id || m.name.toLowerCase().includes(activeProfile.id.toLowerCase())) || 
-           monitors[0] || 
-           { id: '00000000-0000-0000-0000-000000000000', name: 'Clarice' };
-  }, [monitors, activeProfile]);
+  // 10. Filtragens RBAC baseadas no cargo logado
+  const isSupervisor = userRole === 'supervisor';
+  const isMonitor = userRole === 'monitor';
+  const isOperator = userRole === 'operador';
 
-  // 11. Filtragem Geral baseada na Identificação de Perfil Ativo
-  const isSupervisor = activeProfile.role === 'Supervisor';
-  const isMonitor = activeProfile.role === 'Monitora';
-  const supervisorName = activeProfile.name ? activeProfile.name.replace(' (Supervisor)', '') : '';
-  const monitorName = activeProfile.name ? activeProfile.name.replace(' (Monitora)', '') : '';
+  // Identificar operador logado (se for perfil operador)
+  const loggedOperator = useMemo(() => {
+    if (!isOperator) return null;
+    return operators.find(o => o.id === currentUser?.operator_id) ||
+           operators.find(o => o.name.toLowerCase() === currentUser?.name?.toLowerCase()) ||
+           null;
+  }, [isOperator, operators, currentUser]);
 
   // Filtrar operadores por supervisor se for supervisor logado
   const filteredOperators = useMemo(() => {
     if (!isSupervisor) return operators;
-    return operators.filter(o => o.supervisor_id === activeProfile.id || o.supervisor_name === supervisorName);
-  }, [operators, activeProfile, isSupervisor, supervisorName]);
+    return operators.filter(o => 
+      (currentUser?.supervisor_id && o.supervisor_id === currentUser.supervisor_id) ||
+      (currentUser?.name && o.supervisor_name?.toLowerCase().includes(currentUser.name.toLowerCase()))
+    );
+  }, [operators, currentUser, isSupervisor]);
 
   // Filtrar monitorias por supervisor se for supervisor logado
   const filteredMonitorings = useMemo(() => {
@@ -581,11 +735,14 @@ export default function App() {
     return monitorings.filter(m => supervisorOpIds.has(m.operator_id));
   }, [monitorings, filteredOperators, isSupervisor]);
 
-  // Filtrar fila inteligente do monitor logado se for monitora
+  // Filtrar fila inteligente se for monitora vinculada
   const queueOperators = useMemo(() => {
-    if (!isMonitor) return filteredOperators;
-    return filteredOperators.filter(o => o.assigned_monitor_id === null || o.assigned_monitor_id === activeProfile.id || o.assigned_monitor_name === monitorName);
-  }, [filteredOperators, activeProfile, isMonitor, monitorName]);
+    if (!isMonitor || !currentUser?.monitor_id) return filteredOperators;
+    return filteredOperators.filter(o => 
+      o.assigned_monitor_id === null || 
+      o.assigned_monitor_id === currentUser.monitor_id
+    );
+  }, [filteredOperators, currentUser, isMonitor]);
 
   if (authLoading) {
     return (
@@ -610,6 +767,7 @@ export default function App() {
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         unreadAlertsCount={0} 
+        userRole={userRole}
       />
 
       {/* Main Panel */}
@@ -617,15 +775,13 @@ export default function App() {
         
         {/* Header */}
         <Header 
-          activeProfile={activeProfile}
-          setActiveProfile={setActiveProfile}
+          currentUser={currentUser}
+          userRole={userRole}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
           alertsCount={0}
           activeTab={activeTab}
           onLogout={handleLogout}
-          monitors={monitors}
-          supervisors={supervisors}
         />
 
         {/* Content Wrapper */}
@@ -636,7 +792,17 @@ export default function App() {
             </div>
           ) : (
             <>
-              {activeTab === 'dashboard' && (
+              {/* Portal Exclusivo do Operador */}
+              {(isOperator || activeTab === 'portal') && (
+                <OperatorPortal 
+                  currentUser={currentUser}
+                  operator={loggedOperator}
+                  monitorings={monitorings}
+                />
+              )}
+
+              {/* Dashboard */}
+              {!isOperator && activeTab === 'dashboard' && (
                 <Dashboard 
                   operators={filteredOperators} 
                   monitorings={filteredMonitorings} 
@@ -645,18 +811,21 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'queue' && (
+              {/* Fila Inteligente (com Trava de Concorrência) */}
+              {!isOperator && activeTab === 'queue' && (
                 <SmartQueue 
                   operators={queueOperators}
                   monitorings={filteredMonitorings}
                   activeCycle={activeCycle}
-                  onStartMonitoring={(op) => setSelectedOperatorForMonitoring(op)}
+                  onStartMonitoring={handleStartMonitoring}
                   onOpenFeedback={(op) => setSelectedOperatorForFeedback(op)}
+                  currentMonitor={activeMonitorObj}
                   isLoading={isLoading}
                 />
               )}
 
-              {activeTab === 'operators' && (
+              {/* Gestão de Colaboradores */}
+              {!isOperator && activeTab === 'operators' && (
                 <Operators 
                   operators={filteredOperators}
                   supervisors={supervisors}
@@ -683,7 +852,8 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'monitorings_history' && (
+              {/* Histórico Geral de Monitorias */}
+              {!isOperator && activeTab === 'monitorings_history' && (
                 <MonitoringsHistory 
                   operators={filteredOperators}
                   monitorings={filteredMonitorings}
@@ -691,12 +861,13 @@ export default function App() {
                   supervisors={supervisors}
                   onEditMonitoring={handleEditMonitoringClick}
                   onDeleteMonitoring={handleDeleteMonitoring}
-                  activeProfile={activeProfile}
+                  activeProfile={{ role: userRole }}
                   darkMode={darkMode}
                 />
               )}
 
-              {activeTab === 'monitors' && (
+              {/* Monitoras & Supervisores */}
+              {!isOperator && activeTab === 'monitors' && (
                 <MonitorsSupervisors 
                   operators={filteredOperators}
                   monitorings={filteredMonitorings}
@@ -710,16 +881,18 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'intelligence' && (
+              {/* Inteligência Analítica */}
+              {!isOperator && activeTab === 'intelligence' && (
                 <AnalyticalIntelligence 
                   operators={filteredOperators}
                   monitorings={filteredMonitorings}
                   activeCycle={activeCycle}
-                  darkMode={darkMode}
+                  darkMode={darkMode} 
                 />
               )}
 
-              {activeTab === 'reports' && (
+              {/* Central de Relatórios */}
+              {!isOperator && activeTab === 'reports' && (
                 <Reports 
                   operators={filteredOperators}
                   monitorings={filteredMonitorings}
@@ -728,12 +901,24 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'config' && (
+              {/* Configuração de Checklist */}
+              {!isOperator && activeTab === 'config' && (
                 <ConfigChecklist 
                   checklistItems={checklistItems}
                   onAddChecklistItem={handleAddChecklistItem}
                   onDeleteChecklistItem={handleDeleteChecklistItem}
                   isLoading={isLoading}
+                />
+              )}
+
+              {/* Gestão de Acessos & Usuários (Exclusivo Admin) */}
+              {!isOperator && activeTab === 'users' && userRole === 'admin' && (
+                <UserManagement 
+                  users={users}
+                  operators={operators}
+                  supervisors={supervisors}
+                  monitors={monitors}
+                  onRefreshUsers={fetchUsers}
                 />
               )}
             </>
@@ -743,17 +928,14 @@ export default function App() {
 
       {/* ================= MODAIS DE AVALIAÇÃO E FICHA ================= */}
 
-      {/* Modal: Realizar/Editar Monitoria */}
+      {/* Modal: Realizar/Editar Monitoria (com Liberação de Trava ao fechar) */}
       {selectedOperatorForMonitoring && (
         <MonitoringModal
           operator={selectedOperatorForMonitoring}
           monitor={activeMonitorObj}
           activeCycle={activeCycle}
           defaultChecklistItems={checklistItems}
-          onClose={() => {
-            setSelectedOperatorForMonitoring(null);
-            setEditingMonitoring(null);
-          }}
+          onClose={handleCloseMonitoringModal}
           onSave={handleSaveMonitoring}
           monitoring={editingMonitoring}
         />
@@ -773,9 +955,7 @@ export default function App() {
         <OperatorProfileModal
           operator={selectedOperatorForProfile}
           onClose={() => setSelectedOperatorForProfile(null)}
-          darkMode={darkMode}
           onEditMonitoring={handleEditMonitoringClick}
-          onDeleteMonitoring={handleDeleteMonitoring}
         />
       )}
 
@@ -785,7 +965,7 @@ export default function App() {
           <div className="bg-white dark:bg-[#0c0c0f] w-full max-w-md rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/10">
               <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                {editingOperator ? 'Editar Operador' : 'Adicionar Operador'}
+                {editingOperator ? 'Editar Colaborador' : 'Adicionar Colaborador'}
               </h3>
               <button onClick={() => setShowOpForm(false)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
                 <XIcon className="w-5 h-5" />

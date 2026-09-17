@@ -103,8 +103,29 @@ CREATE TABLE IF NOT EXISTS public.q_operators (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Se a tabela já existir, adicione a coluna matrícula:
-ALTER TABLE public.q_operators ADD COLUMN IF NOT EXISTS matricula TEXT;
+-- Se a tabela já existir, adicione as colunas de matrícula e trava de concorrência:
+ALTER TABLE public.q_operators 
+ADD COLUMN IF NOT EXISTS matricula TEXT,
+ADD COLUMN IF NOT EXISTS locked_by_monitor_id UUID REFERENCES public.q_monitors(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS locked_by_monitor_name TEXT,
+ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
+
+-- 6. Gestão de Usuários e Permissões (RBAC)
+CREATE TABLE IF NOT EXISTS public.q_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    auth_user_id UUID,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'monitor', 'supervisor', 'operador')),
+    operator_id UUID REFERENCES public.q_operators(id) ON DELETE SET NULL,
+    supervisor_id UUID REFERENCES public.q_supervisors(id) ON DELETE SET NULL,
+    monitor_id UUID REFERENCES public.q_monitors(id) ON DELETE SET NULL,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.q_users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Acesso q_users" ON public.q_users FOR ALL USING (true) WITH CHECK (true);
 
 -- 6. Monitorias
 CREATE TABLE IF NOT EXISTS public.q_monitorings (
