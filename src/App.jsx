@@ -425,17 +425,30 @@ export default function App() {
         });
       });
 
-      // d. Salvar tudo
-      if (opsToUpsert.length > 0) {
-        const { error } = await supabase.from('q_operators').upsert(opsToUpsert);
-        if (error) throw error;
+      // d. Salvar tudo (separar inserções novas e atualizações para evitar erros de conflito)
+      const opsToInsert = opsToUpsert.filter(o => !o.id);
+      const opsToUpdate = opsToUpsert.filter(o => o.id);
+
+      if (opsToInsert.length > 0) {
+        const { error: insError } = await supabase.from('q_operators').insert(opsToInsert);
+        if (insError) throw insError;
+      }
+
+      if (opsToUpdate.length > 0) {
+        const { error: upError } = await supabase.from('q_operators').upsert(opsToUpdate);
+        if (upError) throw upError;
       }
 
       await fetchStaticData();
       await fetchData();
     } catch (err) {
       console.error('Erro na sincronização de planilha:', err);
-      alert('Erro ao importar operadores. Detalhes no console.');
+      const msg = err?.message || err?.details || JSON.stringify(err);
+      if (msg && msg.includes('matricula')) {
+        alert('Atenção: A coluna "matricula" ainda não foi criada no banco de dados do Supabase.\n\nExecute o comando abaixo no SQL Editor do Supabase para habilitar o campo:\nALTER TABLE public.q_operators ADD COLUMN IF NOT EXISTS matricula TEXT;');
+      } else {
+        alert(`Erro ao importar operadores: ${msg}`);
+      }
     } finally {
       setIsLoading(false);
     }
