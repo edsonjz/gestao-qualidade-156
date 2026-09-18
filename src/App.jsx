@@ -15,6 +15,7 @@ import MonitoringsHistory from './components/MonitoringsHistory';
 import UserManagement from './components/UserManagement';
 import OperatorPortal from './components/OperatorPortal';
 import Audits from './components/Audits';
+import PdiManagement from './components/PdiManagement';
 
 // Modais
 import MonitoringModal from './components/MonitoringModal';
@@ -22,6 +23,7 @@ import FeedbackModal from './components/FeedbackModal';
 import OperatorProfileModal from './components/OperatorProfileModal';
 import AuditModal from './components/AuditModal';
 import AuditTopicsModal from './components/AuditTopicsModal';
+import PdiModal from './components/PdiModal';
 import Login from './components/Login';
 
 export default function App() {
@@ -64,6 +66,18 @@ export default function App() {
     }
   });
   const [showAuditTopicsModal, setShowAuditTopicsModal] = useState(false);
+  
+  // PDIs (Planos de Desenvolvimento Individual)
+  const [pdis, setPdis] = useState(() => {
+    try {
+      const cached = localStorage.getItem('q_pdis_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedOperatorForPdi, setSelectedOperatorForPdi] = useState(null);
+  const [selectedPdiForEdit, setSelectedPdiForEdit] = useState(null);
   
   const [isLoading, setIsLoading] = useState(true);
 
@@ -242,6 +256,25 @@ export default function App() {
         }
       } catch (tErr) {
         console.warn('Carregando temas de auditoria do cache local:', tErr);
+      }
+
+      // f. PDIs (Planos de Desenvolvimento Individual)
+      try {
+        const { data: pdisData, error: pdiErr } = await supabase
+          .from('q_pdis')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!pdiErr && pdisData) {
+          setPdis(pdisData);
+          localStorage.setItem('q_pdis_cache', JSON.stringify(pdisData));
+        } else {
+          const cached = localStorage.getItem('q_pdis_cache');
+          if (cached) setPdis(JSON.parse(cached));
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar PDIs do Supabase, usando cache local:', e);
+        const cached = localStorage.getItem('q_pdis_cache');
+        if (cached) setPdis(JSON.parse(cached));
       }
 
     } catch (err) {
@@ -838,6 +871,61 @@ export default function App() {
     setAuditTopics(prev => {
       const updated = prev.filter(t => t.id !== id);
       localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // 6.c CRUD PDI (Plano de Desenvolvimento Individual)
+  const handleSavePdi = async (payload) => {
+    try {
+      let savedPdi = { ...payload };
+      if (!savedPdi.id) {
+        savedPdi.id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `pdi-${Date.now()}`;
+        savedPdi.created_at = new Date().toISOString();
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('q_pdis')
+          .upsert([savedPdi])
+          .select()
+          .single();
+        if (!error && data) {
+          savedPdi = data;
+        }
+      } catch (e) {
+        console.warn('Persistindo PDI localmente (q_pdis offline/fallback):', e);
+      }
+
+      setPdis(prev => {
+        const index = prev.findIndex(p => p.id === savedPdi.id || p.operator_id === savedPdi.operator_id);
+        let updated;
+        if (index >= 0) {
+          updated = [...prev];
+          updated[index] = savedPdi;
+        } else {
+          updated = [savedPdi, ...prev];
+        }
+        localStorage.setItem('q_pdis_cache', JSON.stringify(updated));
+        return updated;
+      });
+
+      alert('PDI registrado com sucesso!');
+    } catch (err) {
+      console.error('Erro ao salvar PDI:', err);
+      alert('Erro ao salvar PDI: ' + (err.message || ''));
+    }
+  };
+
+  const handleDeletePdi = async (pdiId) => {
+    try {
+      await supabase.from('q_pdis').delete().eq('id', pdiId);
+    } catch (e) {
+      console.warn('Erro ao excluir q_pdis no Supabase:', e);
+    }
+    setPdis(prev => {
+      const updated = prev.filter(p => p.id !== pdiId);
+      localStorage.setItem('q_pdis_cache', JSON.stringify(updated));
       return updated;
     });
   };
@@ -1522,6 +1610,7 @@ export default function App() {
                   operator={loggedOperator}
                   monitorings={monitorings}
                   audits={audits}
+                  pdis={pdis}
                 />
               )}
 
@@ -1622,6 +1711,25 @@ export default function App() {
                   isLoading={isLoading}
                   auditTopics={auditTopics}
                   onOpenManageTopics={() => setShowAuditTopicsModal(true)}
+                />
+              )}
+
+              {/* Nova Aba: Diagnóstico & PDI (Monitorias + Auditorias) */}
+              {!isOperator && activeTab === 'pdi' && (
+                <PdiManagement
+                  operators={filteredOperators}
+                  monitorings={filteredMonitorings}
+                  audits={audits}
+                  pdis={pdis}
+                  supervisors={supervisors}
+                  currentUser={currentUser}
+                  onOpenPdi={(op, pdi) => {
+                    setSelectedOperatorForPdi(op);
+                    setSelectedPdiForEdit(pdi || null);
+                  }}
+                  onDeletePdi={handleDeletePdi}
+                  onRefresh={fetchData}
+                  isLoading={isLoading}
                 />
               )}
 
@@ -1752,6 +1860,31 @@ export default function App() {
           operator={selectedOperatorForProfile}
           onClose={() => setSelectedOperatorForProfile(null)}
           onEditMonitoring={handleEditMonitoringClick}
+          onDeleteMonitoring={handleDeleteMonitoring}
+          darkMode={darkMode}
+          onOpenPdi={(op) => {
+            setSelectedOperatorForPdi(op);
+            const existing = pdis.find(p => p.operator_id === op.id);
+            setSelectedPdiForEdit(existing || null);
+          }}
+        />
+      )}
+
+      {/* Modal: Ficha e Gerador de PDI (Monitorias + Auditorias) */}
+      {selectedOperatorForPdi && (
+        <PdiModal
+          operator={selectedOperatorForPdi}
+          pdi={selectedPdiForEdit}
+          monitorings={monitorings}
+          audits={audits}
+          currentUser={currentUser}
+          onClose={() => {
+            setSelectedOperatorForPdi(null);
+            setSelectedPdiForEdit(null);
+          }}
+          onSavePdi={handleSavePdi}
+          onDeletePdi={handleDeletePdi}
+          darkMode={darkMode}
         />
       )}
 

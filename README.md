@@ -174,6 +174,29 @@ CREATE TABLE IF NOT EXISTS public.q_audit_topics (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- 9. PDIs (Programa de Desenvolvimento Individual)
+CREATE TABLE IF NOT EXISTS public.q_pdis (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id UUID NOT NULL REFERENCES public.q_operators(id) ON DELETE CASCADE,
+    supervisor_id UUID REFERENCES public.q_supervisors(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    status TEXT DEFAULT 'Em Andamento',
+    maturity_level TEXT,
+    maturity_color TEXT,
+    archetype TEXT,
+    diagnostic_summary TEXT,
+    competencies JSONB DEFAULT '{}'::jsonb,
+    strengths JSONB DEFAULT '[]'::jsonb,
+    improvements JSONB DEFAULT '[]'::jsonb,
+    trainings JSONB DEFAULT '[]'::jsonb,
+    action_plan JSONB DEFAULT '[]'::jsonb,
+    follow_ups JSONB DEFAULT '[]'::jsonb,
+    start_date TIMESTAMPTZ DEFAULT now(),
+    target_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- RLS & Políticas de Segurança
 ALTER TABLE public.q_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_cycles ENABLE ROW LEVEL SECURITY;
@@ -184,6 +207,7 @@ ALTER TABLE public.q_operators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_monitorings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_audits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_audit_topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.q_pdis ENABLE ROW LEVEL SECURITY;
 
 -- Políticas Seguras: Apenas usuários autenticados têm acesso operacional
 CREATE POLICY "Leitura q_users para autenticados" ON public.q_users 
@@ -210,6 +234,7 @@ CREATE POLICY "Acesso q_operators autenticados" ON public.q_operators FOR ALL TO
 CREATE POLICY "Acesso q_monitorings autenticados" ON public.q_monitorings FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso q_audits autenticados" ON public.q_audits FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso q_audit_topics autenticados" ON public.q_audit_topics FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_pdis autenticados" ON public.q_pdis FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 INSERT INTO public.q_cycles (cycle_number, status, started_at) VALUES (1, 'Ativo', now()) ON CONFLICT DO NOTHING;
 

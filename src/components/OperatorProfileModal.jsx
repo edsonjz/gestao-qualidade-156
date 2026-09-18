@@ -17,7 +17,8 @@ import {
   Briefcase,
   Layers,
   Sparkles,
-  Printer
+  Printer,
+  GraduationCap
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -26,7 +27,8 @@ export default function OperatorProfileModal({
   onClose, 
   darkMode,
   onEditMonitoring,
-  onDeleteMonitoring
+  onDeleteMonitoring,
+  onOpenPdi
 }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -243,6 +245,19 @@ export default function OperatorProfileModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenPdi && (
+              <button 
+                onClick={() => {
+                  onClose();
+                  onOpenPdi(operator);
+                }} 
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Abrir ou gerar o PDI com base em monitorias e auditorias"
+              >
+                <GraduationCap className="w-3.5 h-3.5" />
+                Abrir PDI & Diagnóstico
+              </button>
+            )}
             <button 
               onClick={() => window.print()} 
               className="px-3 py-1.5 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"

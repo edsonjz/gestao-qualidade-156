@@ -17,7 +17,10 @@ import {
   HeartHandshake,
   Lightbulb,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  GraduationCap,
+  Target,
+  BookOpen
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -25,9 +28,10 @@ export default function OperatorPortal({
   currentUser, 
   operator, 
   monitorings = [],
-  audits = []
+  audits = [],
+  pdis = []
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('monitorings'); // 'monitorings' | 'audits'
+  const [activeSubTab, setActiveSubTab] = useState('monitorings'); // 'monitorings' | 'audits' | 'pdi'
   const [selectedMonitoring, setSelectedMonitoring] = useState(null);
   const [selectedAudit, setSelectedAudit] = useState(null);
 
@@ -39,9 +43,10 @@ export default function OperatorPortal({
   const [pwdError, setPwdError] = useState('');
   const [pwdSuccess, setPwdSuccess] = useState('');
 
-  // Filtrar apenas as monitorias e auditorias deste operador
+  // Filtrar apenas as monitorias, auditorias e PDI deste operador
   const myMonitorings = monitorings.filter(m => m.operator_id === operator?.id);
   const myAudits = audits.filter(a => a.operator_id === operator?.id);
+  const myPdi = pdis.find(p => p.operator_id === operator?.id);
 
   // KPIs
   const totalMonitorings = myMonitorings.length;
@@ -206,6 +211,18 @@ export default function OperatorPortal({
         >
           <Sparkles className="w-4 h-4" />
           Auditorias de Desenvolvimento ({myAudits.length})
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('pdi')}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeSubTab === 'pdi'
+              ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
+              : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          Meu PDI & Treinamentos {myPdi ? `(${myPdi.status})` : ''}
         </button>
       </div>
 
@@ -377,6 +394,118 @@ export default function OperatorPortal({
               })
             )}
           </div>
+        </div>
+      )}
+
+      {/* ABA 3: MEU PDI & TREINAMENTOS */}
+      {activeSubTab === 'pdi' && (
+        <div className="space-y-6">
+          {!myPdi ? (
+            <div className="bg-white dark:bg-[#0c0c0f] rounded-2xl border border-zinc-200 dark:border-zinc-800 p-12 text-center shadow-sm">
+              <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center text-blue-500 mx-auto mb-3">
+                <GraduationCap className="w-6 h-6" />
+              </div>
+              <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                Nenhum PDI Ativo no Momento
+              </h4>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-md mx-auto leading-relaxed">
+                Seu Plano de Desenvolvimento Individual (PDI) é elaborado conjuntamente com a sua supervisão e monitoria de qualidade com base no seu histórico de monitorias e auditorias.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              
+              {/* Header do PDI */}
+              <div className="bg-white dark:bg-[#0c0c0f] rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 px-2.5 py-0.5 rounded-full">
+                      {myPdi.status}
+                    </span>
+                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                      {myPdi.title}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Maturidade avaliada: <strong>{myPdi.maturityLevel || 'Consistente'}</strong> • Perfil: <strong>{myPdi.archetype || 'Equilibrado'}</strong>
+                  </p>
+                </div>
+                <div className="text-xs text-zinc-400">
+                  Previsão de conclusão: <strong>{myPdi.targetDate || 'Em acompanhamento'}</strong>
+                </div>
+              </div>
+
+              {/* Diagnóstico Geral */}
+              <div className="bg-blue-50/50 dark:bg-blue-950/20 p-5 rounded-2xl border border-blue-200/80 dark:border-blue-900/40 space-y-2">
+                <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Diagnóstico da Qualidade & Supervisão
+                </span>
+                <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                  {myPdi.diagnosticSummary}
+                </p>
+              </div>
+
+              {/* Trilhas de Treinamento Designadas */}
+              <div className="bg-white dark:bg-[#0c0c0f] rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm space-y-4">
+                <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-purple-500" />
+                  Trilhas de Treinamento Designadas
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {myPdi.trainings?.map((trn, idx) => (
+                    <div key={idx} className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 flex items-center justify-between gap-3">
+                      <div>
+                        <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 block">
+                          {trn.title}
+                        </span>
+                        <span className="text-[10px] text-zinc-400">
+                          {trn.duration} • Prioridade: {trn.priority || 'Média'}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        trn.status === 'Concluído'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                      }`}>
+                        {trn.status || 'Pendente'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Plano de Ação e Metas */}
+              <div className="bg-white dark:bg-[#0c0c0f] rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm space-y-4">
+                <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-blue-500" />
+                  Metas Práticas & Ações Acordadas
+                </h4>
+                <div className="space-y-3">
+                  {myPdi.actionPlan?.map((act, idx) => (
+                    <div key={idx} className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 flex items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 block">
+                          {act.action}
+                        </span>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                          Meta mensurável: <strong>{act.metric}</strong> • Prazo: <strong>{act.deadline}</strong>
+                        </p>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                        act.status === 'Atingida'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                          : 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300'
+                      }`}>
+                        {act.status || 'Em Andamento'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
         </div>
       )}
 
