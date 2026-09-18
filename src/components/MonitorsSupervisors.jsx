@@ -15,12 +15,14 @@ import {
   X,
   AlertCircle,
   RefreshCw,
-  Shield
+  Shield,
+  Sparkles
 } from 'lucide-react';
 
 export default function MonitorsSupervisors({ 
   operators, 
   monitorings, 
+  audits = [],
   monitors, 
   supervisors,
   users = [],
@@ -36,6 +38,7 @@ export default function MonitorsSupervisors({
   const [monitorForm, setMonitorForm] = useState({
     name: '',
     daily_target: 17,
+    daily_audit_target: 5,
     email: '',
     password: ''
   });
@@ -82,6 +85,26 @@ export default function MonitorsSupervisors({
       // Buscar credencial vinculada
       const linkedUser = users.find(u => u.monitor_id === m.id || (u.role === 'monitor' && u.name.toLowerCase() === m.name.toLowerCase()));
 
+      // Estatísticas de Auditorias de Desenvolvimento
+      const monitorAudits = audits.filter(a => 
+        a.auditor_id === m.id || 
+        (linkedUser && a.auditor_id === linkedUser.id) ||
+        (a.auditor_name && a.auditor_name.toLowerCase() === m.name.toLowerCase())
+      );
+
+      const auditsToday = monitorAudits.filter(a =>
+        a.audit_date && a.audit_date.startsWith(todayStr)
+      ).length;
+
+      const auditsMonth = monitorAudits.filter(a =>
+        a.audit_date && a.audit_date.startsWith(currentMonthStr)
+      ).length;
+
+      const dailyAuditTarget = Number(m.daily_audit_target) || 5;
+      const dailyAuditPct = dailyAuditTarget > 0 
+        ? Math.round((auditsToday / dailyAuditTarget) * 100) 
+        : 0;
+
       return {
         ...m,
         realizedToday,
@@ -89,10 +112,14 @@ export default function MonitorsSupervisors({
         completedFeedbacks,
         monthlyProductivity,
         dailyProductivityPct,
+        auditsToday,
+        auditsMonth,
+        daily_audit_target: dailyAuditTarget,
+        dailyAuditPct,
         linkedUser
       };
     });
-  }, [monitors, monitorings, users]);
+  }, [monitors, monitorings, audits, users]);
 
   // 2. Calcular estatísticas dos Supervisores
   const supervisorStats = useMemo(() => {
@@ -150,6 +177,7 @@ export default function MonitorsSupervisors({
     setMonitorForm({
       name: '',
       daily_target: 17,
+      daily_audit_target: 5,
       email: '',
       password: ''
     });
@@ -162,6 +190,7 @@ export default function MonitorsSupervisors({
     setMonitorForm({
       name: m.name || '',
       daily_target: m.daily_target || 17,
+      daily_audit_target: m.daily_audit_target !== undefined ? m.daily_audit_target : 5,
       email: m.linkedUser?.email || '',
       password: ''
     });
@@ -178,6 +207,7 @@ export default function MonitorsSupervisors({
         id: editingMonitor?.id,
         name: monitorForm.name.trim(),
         daily_target: parseInt(monitorForm.daily_target, 10) || 17,
+        daily_audit_target: parseInt(monitorForm.daily_audit_target, 10) || 5,
         email: monitorForm.email.trim().toLowerCase(),
         password: monitorForm.password
       });
@@ -302,56 +332,75 @@ export default function MonitorsSupervisors({
                 </div>
               </div>
 
-              {/* Grid de Estatísticas */}
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Meta Diária</span>
-                  <div className="flex items-center gap-1.5">
-                    <Target className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="text-base font-bold text-zinc-800 dark:text-zinc-200">{m.daily_target}</span>
-                  </div>
+              {/* Seção Monitorias de Qualidade */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  <span className="flex items-center gap-1">
+                    <Target className="w-3.5 h-3.5 text-blue-500" />
+                    Monitorias de Qualidade
+                  </span>
+                  <span className="text-zinc-400 font-normal lowercase">meta: {m.daily_target}/dia</span>
                 </div>
-
-                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Realizado Hoje</span>
-                  <div className="flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-base font-bold text-zinc-800 dark:text-zinc-200">{m.realizedToday}</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-zinc-50 dark:bg-zinc-900/30 p-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Hoje</span>
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{m.realizedToday}</span>
                   </div>
-                </div>
-
-                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800/40 col-span-2 lg:col-span-1">
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Produtividade</span>
-                  <div className="flex items-center gap-1.5">
-                    <Percent className="w-3.5 h-3.5 text-blue-500" />
-                    <span className={`text-base font-bold ${
+                  <div className="bg-zinc-50 dark:bg-zinc-900/30 p-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Produtividade</span>
+                    <span className={`text-sm font-bold ${
                       m.dailyProductivityPct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-800 dark:text-zinc-200'
                     }`}>{m.dailyProductivityPct}%</span>
                   </div>
-                </div>
-
-                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Feedbacks Pendentes</span>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-base font-bold text-zinc-800 dark:text-zinc-200">{m.pendingFeedbacks}</span>
+                  <div className="bg-zinc-50 dark:bg-zinc-900/30 p-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">No Mês</span>
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{m.monthlyProductivity}</span>
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800/40">
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Feedbacks Concluídos</span>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-base font-bold text-zinc-800 dark:text-zinc-200">{m.completedFeedbacks}</span>
+              {/* Seção Auditorias de Desenvolvimento */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                <div className="flex items-center justify-between text-[11px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider">
+                  <span className="flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                    Auditorias de Desenvolvimento
+                  </span>
+                  <span className="text-zinc-400 font-normal lowercase">meta: {m.daily_audit_target}/dia</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-purple-50/40 dark:bg-purple-950/20 p-2.5 rounded-lg border border-purple-100 dark:border-purple-900/30">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Hoje</span>
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{m.auditsToday}</span>
+                  </div>
+                  <div className="bg-purple-50/40 dark:bg-purple-950/20 p-2.5 rounded-lg border border-purple-100 dark:border-purple-900/30">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Produtividade</span>
+                    <span className={`text-sm font-bold ${
+                      m.dailyAuditPct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-800 dark:text-zinc-200'
+                    }`}>{m.dailyAuditPct}%</span>
+                  </div>
+                  <div className="bg-purple-50/40 dark:bg-purple-950/20 p-2.5 rounded-lg border border-purple-100 dark:border-purple-900/30">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">No Mês</span>
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{m.auditsMonth}</span>
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800/40 col-span-2 lg:col-span-1">
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block mb-0.5">Realizado no Mês</span>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-purple-500" />
-                    <span className="text-base font-bold text-zinc-800 dark:text-zinc-200">{m.monthlyProductivity}</span>
+              {/* Status de Feedbacks */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800/40 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block">Feedbacks Pendentes</span>
+                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{m.pendingFeedbacks}</span>
                   </div>
+                  <Clock className="w-4 h-4 text-amber-500/70" />
+                </div>
+                <div className="bg-zinc-50 dark:bg-zinc-900/30 p-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800/40 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-semibold block">Feedbacks Concluídos</span>
+                    <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{m.completedFeedbacks}</span>
+                  </div>
+                  <CheckCircle className="w-4 h-4 text-emerald-500/70" />
                 </div>
               </div>
             </div>
@@ -517,18 +566,32 @@ export default function MonitorsSupervisors({
                 />
               </div>
 
-              {/* Meta Diária */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-500 dark:text-zinc-400">Meta Diária de Avaliações</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  required
-                  value={monitorForm.daily_target}
-                  onChange={(e) => setMonitorForm({ ...monitorForm, daily_target: e.target.value })}
-                  className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
-                />
+              {/* Metas Diárias */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-500 dark:text-zinc-400">Meta Diária (Monitorias)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    required
+                    value={monitorForm.daily_target}
+                    onChange={(e) => setMonitorForm({ ...monitorForm, daily_target: e.target.value })}
+                    className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-500 dark:text-zinc-400">Meta Diária (Auditorias)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    required
+                    value={monitorForm.daily_audit_target}
+                    onChange={(e) => setMonitorForm({ ...monitorForm, daily_audit_target: e.target.value })}
+                    className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
+                  />
+                </div>
               </div>
 
               {/* Bloco de Credencial de Acesso */}

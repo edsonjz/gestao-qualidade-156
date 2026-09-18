@@ -14,6 +14,7 @@ import {
   ShieldCheck, 
   ChevronRight,
   Eye,
+  Trash2,
   RefreshCw
 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ export default function Audits({
   onStartAudit, 
   onViewAudit,
   onForceUnlock,
+  onDeleteAudit,
   onRefresh,
   isLoading = false 
 }) {
@@ -288,6 +290,20 @@ export default function Audits({
                       <Eye className="w-3.5 h-3.5" />
                       Visualizar
                     </button>
+                    {onDeleteAudit && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Deseja realmente excluir esta auditoria de ${op.name || a.operator_name || 'operador'}? Esta ação é irreversível.`)) {
+                            onDeleteAudit(a.id);
+                          }
+                        }}
+                        className="px-3 py-1.5 border border-rose-200 dark:border-rose-900/40 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                        title="Excluir auditoria"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Excluir
+                      </button>
+                    )}
                   </div>
                 </div>
               );

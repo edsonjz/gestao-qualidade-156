@@ -167,12 +167,18 @@ export default function App() {
       const active = cycles?.find(c => c.status === 'Ativo') || null;
       setActiveCycle(active);
 
-      // b. Monitores
+      // b. Monitores (com hidratação de metas diárias de monitoria e auditoria)
+      const auditTargets = JSON.parse(localStorage.getItem('q_daily_audit_targets') || '{}');
       const { data: monitorsData } = await supabase
         .from('q_monitors')
-        .select('id, name, daily_target')
+        .select('*')
         .order('name');
-      setMonitors(monitorsData || []);
+      const hydratedMonitors = (monitorsData || []).map(m => ({
+        ...m,
+        daily_target: Number(m.daily_target) || 17,
+        daily_audit_target: Number(m.daily_audit_target) || Number(auditTargets[m.id]) || 5
+      }));
+      setMonitors(hydratedMonitors);
 
       // c. Supervisores
       const { data: supervisorsData } = await supabase
@@ -551,24 +557,57 @@ export default function App() {
     }
   };
 
-  // 5. CRUD Monitores (com metas e credenciais)
-  const handleSaveMonitor = async ({ id, name, daily_target, email, password }) => {
+  // 5. CRUD Monitores (com metas de monitoria e auditoria e credenciais)
+  const handleSaveMonitor = async ({ id, name, daily_target, daily_audit_target, email, password }) => {
     try {
       let monitorId = id;
+      const numDaily = Number(daily_target) || 17;
+      const numAuditDaily = Number(daily_audit_target) || 5;
+
+      const auditTargets = JSON.parse(localStorage.getItem('q_daily_audit_targets') || '{}');
+      const basePayload = { name, daily_target: numDaily };
+      const extendedPayload = { ...basePayload, daily_audit_target: numAuditDaily };
+
       if (id) {
-        const { error: updErr } = await supabase
-          .from('q_monitors')
-          .update({ name, daily_target })
-          .eq('id', id);
-        if (updErr) throw updErr;
+        auditTargets[id] = numAuditDaily;
+        localStorage.setItem('q_daily_audit_targets', JSON.stringify(auditTargets));
+
+        try {
+          const { error: updErr } = await supabase
+            .from('q_monitors')
+            .update(extendedPayload)
+            .eq('id', id);
+          if (updErr) throw updErr;
+        } catch (colErr) {
+          const { error: fbErr } = await supabase
+            .from('q_monitors')
+            .update(basePayload)
+            .eq('id', id);
+          if (fbErr) throw fbErr;
+        }
       } else {
-        const { data: newMon, error: insErr } = await supabase
-          .from('q_monitors')
-          .insert([{ name, daily_target }])
-          .select()
-          .single();
-        if (insErr) throw insErr;
-        monitorId = newMon.id;
+        try {
+          const { data: newMon, error: insErr } = await supabase
+            .from('q_monitors')
+            .insert([extendedPayload])
+            .select()
+            .single();
+          if (insErr) throw insErr;
+          monitorId = newMon.id;
+        } catch (colErr) {
+          const { data: newMon, error: fbErr } = await supabase
+            .from('q_monitors')
+            .insert([basePayload])
+            .select()
+            .single();
+          if (fbErr) throw fbErr;
+          monitorId = newMon.id;
+        }
+
+        if (monitorId) {
+          auditTargets[monitorId] = numAuditDaily;
+          localStorage.setItem('q_daily_audit_targets', JSON.stringify(auditTargets));
+        }
       }
 
       // Se informou e-mail para credencial
@@ -1050,6 +1089,22 @@ export default function App() {
     }
   };
 
+  // Excluir auditoria formativa
+  const handleDeleteAudit = async (auditId) => {
+    try {
+      const { error } = await supabase
+        .from('q_audits')
+        .delete()
+        .eq('id', auditId);
+      if (error) throw error;
+      setAudits(prev => prev.filter(a => a.id !== auditId));
+      alert('Auditoria excluída com sucesso.');
+    } catch (err) {
+      console.error('Erro ao excluir auditoria:', err);
+      alert('Erro ao excluir auditoria no banco de dados: ' + (err.message || ''));
+    }
+  };
+
   // Forçar liberação de trava (Desbloqueio manual de emergência)
   const handleForceUnlockOperator = async (opId) => {
     try {
@@ -1341,6 +1396,7 @@ export default function App() {
                   allOperators={operators}
                   monitorings={filteredMonitorings} 
                   allMonitorings={monitorings}
+                  audits={audits}
                   monitors={monitors}
                   supervisors={supervisors}
                   activeCycle={activeCycle}
@@ -1420,6 +1476,7 @@ export default function App() {
                   currentUser={currentUser}
                   onStartAudit={handleStartAudit}
                   onForceUnlock={handleForceUnlockOperator}
+                  onDeleteAudit={handleDeleteAudit}
                   onViewAudit={(audit) => {
                     const op = operators.find(o => o.id === audit.operator_id) || audit.q_operators || { id: audit.operator_id, name: audit.operator_name };
                     setSelectedOperatorForAudit(op);
@@ -1435,6 +1492,7 @@ export default function App() {
                 <MonitorsSupervisors 
                   operators={filteredOperators}
                   monitorings={filteredMonitorings}
+                  audits={audits}
                   monitors={monitors}
                   supervisors={supervisors}
                   users={users}
