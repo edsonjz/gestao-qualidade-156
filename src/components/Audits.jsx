@@ -339,12 +339,21 @@ export default function Audits({
                     (new Date() - new Date(op.locked_at)) < 30 * 60 * 1000
                   );
 
-                  const isLockedByMe = isLocked && op.locked_by_monitor_id && (
-                    op.locked_by_monitor_id === currentUser?.id ||
-                    op.locked_by_monitor_id === currentUser?.email
+                  const myEmail = currentUser?.email?.toLowerCase();
+                  const myName = (currentUser?.name || '').toLowerCase();
+                  const lockNameLower = (op.locked_by_monitor_name || '').toLowerCase();
+
+                  const isLockedByMe = isLocked && Boolean(
+                    (myEmail && lockNameLower.includes(myEmail)) ||
+                    (myName && myName.length > 2 && lockNameLower.includes(myName)) ||
+                    (currentUser?.id && op.locked_by_monitor_id === currentUser?.id)
                   );
 
-                  const isLockedByOther = isLocked && op.locked_by_monitor_id && !isLockedByMe;
+                  const isLockedByOther = isLocked && !isLockedByMe;
+
+                  const displayLockName = op.locked_by_monitor_name 
+                    ? op.locked_by_monitor_name.replace(/\s*\[.*?\]/, '') 
+                    : 'outro usuário';
 
                   return (
                     <div 
@@ -369,7 +378,7 @@ export default function Audits({
                         <div className="flex items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                             <Lock className="w-3 h-3" />
-                            {op.locked_by_monitor_name ? `Em uso por ${op.locked_by_monitor_name}` : 'Em uso por outro usuário'}
+                            Em uso por {displayLockName}
                           </span>
                           {onForceUnlock && (
                             <button

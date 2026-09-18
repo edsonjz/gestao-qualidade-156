@@ -795,57 +795,78 @@ export default function App() {
   }, [monitors, currentUser]);
 
   const handleStartMonitoring = async (op) => {
-    // 1. Sempre consultar o banco em tempo real antes de validar para garantir que não pega dado desatualizado do navegador
     try {
-      const { data: freshOp } = await supabase
+      // 1. Consultar estado mais recente do banco de dados em tempo real
+      const { data: freshOp, error: fetchErr } = await supabase
         .from('q_operators')
         .select('id, name, locked_by_monitor_id, locked_by_monitor_name, locked_at')
         .eq('id', op.id)
         .maybeSingle();
+
+      if (fetchErr) {
+        console.warn('Aviso ao consultar operador no Supabase:', fetchErr);
+      }
 
       const currentOp = freshOp || op;
       const isLocked = Boolean(
         currentOp.locked_at && 
         (new Date() - new Date(currentOp.locked_at)) < 30 * 60 * 1000
       );
-      const activeUserId = currentUser?.email || currentUser?.id || activeMonitorObj?.id;
 
-      const isLockedByMe = isLocked && currentOp.locked_by_monitor_id && (
-        currentOp.locked_by_monitor_id === activeUserId ||
-        currentOp.locked_by_monitor_id === currentUser?.id ||
-        currentOp.locked_by_monitor_id === currentUser?.email ||
-        currentOp.locked_by_monitor_id === activeMonitorObj?.id
+      const myEmail = currentUser?.email?.toLowerCase();
+      const myName = (currentUser?.name || activeMonitorObj?.name || '').toLowerCase();
+      const myMonitorId = activeMonitorObj?.id;
+      const lockNameLower = (currentOp.locked_by_monitor_name || '').toLowerCase();
+
+      const isLockedByMe = isLocked && Boolean(
+        (myEmail && lockNameLower.includes(myEmail)) ||
+        (myName && myName.length > 2 && lockNameLower.includes(myName)) ||
+        (myMonitorId && currentOp.locked_by_monitor_id === myMonitorId)
       );
 
-      const isLockedByOther = isLocked && currentOp.locked_by_monitor_id && !isLockedByMe;
+      const isLockedByOther = isLocked && !isLockedByMe;
 
       if (isLockedByOther) {
-        const procType = currentOp.locked_by_monitor_name?.includes('Auditoria') ? 'Auditoria' : 'Monitoria';
-        alert(`Atenção: O operador ${op.name} já está em processo de ${procType} por ${currentOp.locked_by_monitor_name || 'outro usuário'} neste momento.\n\nPara evitar conflito, selecione outro operador.`);
+        const displayName = currentOp.locked_by_monitor_name 
+          ? currentOp.locked_by_monitor_name.replace(/\s*\[.*?\]/, '') 
+          : 'outro usuário';
+        alert(`Atenção: O operador ${op.name} já está em processo de avaliação/atendimento por ${displayName} neste momento.\n\nPara evitar duplicidade, selecione outro operador.`);
         fetchData();
-        return;
+        return; // INTERROMPE E NÃO ABRE O MODAL
       }
 
-      // Registrar trava no Supabase
-      const lockedName = `${currentUser?.name || activeMonitorObj?.name || 'Avaliador'} (Monitoria)`;
-      await supabase.from('q_operators').update({
-        locked_by_monitor_id: activeUserId,
+      // Validar se activeMonitorObj.id é UUID válido em q_monitors para não violar FK
+      const validMonitorId = (activeMonitorObj?.id && monitors.some(m => m.id === activeMonitorObj.id)) 
+        ? activeMonitorObj.id 
+        : null;
+
+      const userIdent = currentUser?.email || currentUser?.name || activeMonitorObj?.name || 'Avaliador';
+      const lockedName = `${currentUser?.name || activeMonitorObj?.name || 'Avaliador'} (Monitoria) [${userIdent}]`;
+
+      const { error: lockErr } = await supabase.from('q_operators').update({
+        locked_by_monitor_id: validMonitorId,
         locked_by_monitor_name: lockedName,
         locked_at: new Date().toISOString()
       }).eq('id', op.id);
 
+      if (lockErr) {
+        console.error('Falha ao travar operador no banco:', lockErr);
+        alert(`Não foi possível iniciar: erro ao registrar trava no banco de dados (${lockErr.message || JSON.stringify(lockErr)}).`);
+        return; // INTERROMPE E NÃO ABRE O MODAL
+      }
+
       // Atualizar no estado local
       setOperators(prev => prev.map(o => o.id === op.id ? {
         ...o,
-        locked_by_monitor_id: activeUserId,
+        locked_by_monitor_id: validMonitorId,
         locked_by_monitor_name: lockedName,
         locked_at: new Date().toISOString()
       } : o));
 
       setSelectedOperatorForMonitoring(op);
     } catch (err) {
-      console.warn('Aviso ao registrar trava de concorrência:', err);
-      setSelectedOperatorForMonitoring(op);
+      console.error('Erro inesperado em handleStartMonitoring:', err);
+      alert('Erro inesperado ao iniciar monitoria: ' + (err.message || ''));
     }
   };
 
@@ -880,45 +901,66 @@ export default function App() {
   // 9. Concorrência e Handlers de Auditoria Formativa (Sem Nota)
   const handleStartAudit = async (op) => {
     try {
-      const { data: freshOp } = await supabase
+      const { data: freshOp, error: fetchErr } = await supabase
         .from('q_operators')
         .select('id, name, locked_by_monitor_id, locked_by_monitor_name, locked_at')
         .eq('id', op.id)
         .maybeSingle();
+
+      if (fetchErr) {
+        console.warn('Aviso ao consultar operador no Supabase:', fetchErr);
+      }
 
       const currentOp = freshOp || op;
       const isLocked = Boolean(
         currentOp.locked_at && 
         (new Date() - new Date(currentOp.locked_at)) < 30 * 60 * 1000
       );
-      const activeUserId = currentUser?.email || currentUser?.id || activeMonitorObj?.id;
 
-      const isLockedByMe = isLocked && currentOp.locked_by_monitor_id && (
-        currentOp.locked_by_monitor_id === activeUserId ||
-        currentOp.locked_by_monitor_id === currentUser?.id ||
-        currentOp.locked_by_monitor_id === currentUser?.email ||
-        currentOp.locked_by_monitor_id === activeMonitorObj?.id
+      const myEmail = currentUser?.email?.toLowerCase();
+      const myName = (currentUser?.name || activeMonitorObj?.name || '').toLowerCase();
+      const myMonitorId = activeMonitorObj?.id;
+      const lockNameLower = (currentOp.locked_by_monitor_name || '').toLowerCase();
+
+      const isLockedByMe = isLocked && Boolean(
+        (myEmail && lockNameLower.includes(myEmail)) ||
+        (myName && myName.length > 2 && lockNameLower.includes(myName)) ||
+        (myMonitorId && currentOp.locked_by_monitor_id === myMonitorId)
       );
 
-      const isLockedByOther = isLocked && currentOp.locked_by_monitor_id && !isLockedByMe;
+      const isLockedByOther = isLocked && !isLockedByMe;
 
       if (isLockedByOther) {
-        const procType = currentOp.locked_by_monitor_name?.includes('Monitoria') ? 'Monitoria' : 'Auditoria';
-        alert(`Atenção: O operador ${op.name} já está em processo de ${procType} por ${currentOp.locked_by_monitor_name || 'outro usuário'} neste momento.\n\nPara evitar conflito, selecione outro operador.`);
+        const displayName = currentOp.locked_by_monitor_name 
+          ? currentOp.locked_by_monitor_name.replace(/\s*\[.*?\]/, '') 
+          : 'outro usuário';
+        alert(`Atenção: O operador ${op.name} já está em processo de ${currentOp.locked_by_monitor_name?.includes('Monitoria') ? 'Monitoria' : 'Auditoria'} por ${displayName} neste momento.\n\nPara evitar conflito, selecione outro operador.`);
         fetchData();
-        return;
+        return; // INTERROMPE E NÃO ABRE O MODAL
       }
 
-      const lockedName = `${currentUser?.name || 'Avaliador'} (Auditoria)`;
-      await supabase.from('q_operators').update({
-        locked_by_monitor_id: activeUserId,
+      const validMonitorId = (activeMonitorObj?.id && monitors.some(m => m.id === activeMonitorObj.id)) 
+        ? activeMonitorObj.id 
+        : null;
+
+      const userIdent = currentUser?.email || currentUser?.name || 'Avaliador';
+      const lockedName = `${currentUser?.name || 'Avaliador'} (Auditoria) [${userIdent}]`;
+
+      const { error: lockErr } = await supabase.from('q_operators').update({
+        locked_by_monitor_id: validMonitorId,
         locked_by_monitor_name: lockedName,
         locked_at: new Date().toISOString()
       }).eq('id', op.id);
 
+      if (lockErr) {
+        console.error('Falha ao travar operador para auditoria:', lockErr);
+        alert(`Não foi possível iniciar auditoria: erro ao registrar trava no banco de dados (${lockErr.message || JSON.stringify(lockErr)}).`);
+        return; // INTERROMPE E NÃO ABRE O MODAL
+      }
+
       setOperators(prev => prev.map(o => o.id === op.id ? {
         ...o,
-        locked_by_monitor_id: activeUserId,
+        locked_by_monitor_id: validMonitorId,
         locked_by_monitor_name: lockedName,
         locked_at: new Date().toISOString()
       } : o));
@@ -926,8 +968,8 @@ export default function App() {
       setSelectedOperatorForAudit(op);
       setSelectedAuditForView(null);
     } catch (err) {
-      console.warn('Erro ao iniciar auditoria:', err);
-      setSelectedOperatorForAudit(op);
+      console.error('Erro inesperado em handleStartAudit:', err);
+      alert('Erro inesperado ao iniciar auditoria: ' + (err.message || ''));
     }
   };
 
