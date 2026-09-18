@@ -14,7 +14,7 @@ import {
   X,
   RefreshCw
 } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+import { supabase, createEphemeralClient } from '../supabaseClient';
 
 export default function UserManagement({ 
   users = [], 
@@ -92,9 +92,29 @@ export default function UserManagement({
 
       if (editingUser) {
         // Atualizar usuário existente
+        let updatedAuthUserId = editingUser.auth_user_id;
+
+        // Se o usuário ainda não possuía login criado no Supabase Auth e uma senha foi informada
+        if (!editingUser.auth_user_id && formData.password && formData.password.length >= 6) {
+          const authClient = createEphemeralClient();
+          const { data: authData, error: authErr } = await authClient.auth.signUp({
+            email: emailClean,
+            password: formData.password,
+            options: {
+              data: {
+                name: nameClean,
+                role: formData.role
+              }
+            }
+          });
+          if (authErr) throw authErr;
+          updatedAuthUserId = authData?.user?.id || null;
+        }
+
         const updatePayload = {
           name: nameClean,
           role: formData.role,
+          auth_user_id: updatedAuthUserId,
           operator_id: formData.role === 'operador' ? formData.operator_id || null : null,
           supervisor_id: formData.role === 'supervisor' ? formData.supervisor_id || null : null,
           monitor_id: formData.role === 'monitor' ? formData.monitor_id || null : null,
@@ -120,8 +140,9 @@ export default function UserManagement({
           throw new Error('A senha deve ter pelo menos 6 caracteres.');
         }
 
-        // 1. Criar no Supabase Auth
-        const { data: authData, error: authErr } = await supabase.auth.signUp({
+        // 1. Criar no Supabase Auth usando cliente efêmero para não desconectar o administrador
+        const authClient = createEphemeralClient();
+        const { data: authData, error: authErr } = await authClient.auth.signUp({
           email: emailClean,
           password: formData.password,
           options: {
@@ -151,7 +172,6 @@ export default function UserManagement({
           .insert([newRecord]);
 
         if (insErr) {
-          // Se falhar por tabela inexistente ou constraint
           throw insErr;
         }
 
@@ -231,6 +251,82 @@ export default function UserManagement({
     return <span className="text-zinc-400 italic">Geral / Sem vínculo</span>;
   };
 
+  const [syncingOperators, setSyncingOperators] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(null);
+
+  const handleSyncOperators = async () => {
+    const validOperators = operators.filter(o => o.active && o.matricula && String(o.matricula).trim() !== '');
+    if (validOperators.length === 0) {
+      alert('Nenhum operador ativo com matrícula cadastrada foi encontrado para sincronizar.');
+      return;
+    }
+
+    if (!confirm(`Deseja criar/sincronizar o login de ${validOperators.length} operadores ativos com a senha padrão "123456"?\n\nEles poderão entrar digitando apenas a matrícula e essa senha.`)) {
+      return;
+    }
+
+    setSyncingOperators(true);
+    setSyncProgress({ current: 0, total: validOperators.length, currentName: '' });
+
+    let countSuccess = 0;
+    const authClient = createEphemeralClient();
+
+    for (let i = 0; i < validOperators.length; i++) {
+      const op = validOperators[i];
+      const matClean = String(op.matricula).trim().toLowerCase();
+      const opEmail = `op_${matClean}@156poa.com.br`;
+
+      setSyncProgress({ current: i + 1, total: validOperators.length, currentName: op.name });
+
+      try {
+        const existing = users.find(u => u.email === opEmail || u.operator_id === op.id);
+        let authId = existing?.auth_user_id || null;
+
+        if (!authId) {
+          const { data: authData, error: authErr } = await authClient.auth.signUp({
+            email: opEmail,
+            password: '123456',
+            options: {
+              data: {
+                name: op.name,
+                role: 'operador',
+                matricula: op.matricula
+              }
+            }
+          });
+
+          if (!authErr && authData?.user?.id) {
+            authId = authData.user.id;
+          }
+        }
+
+        const userPayload = {
+          auth_user_id: authId,
+          email: opEmail,
+          name: op.name,
+          role: 'operador',
+          operator_id: op.id,
+          active: true
+        };
+
+        if (existing?.id) {
+          await supabase.from('q_users').update(userPayload).eq('id', existing.id);
+        } else {
+          await supabase.from('q_users').insert([userPayload]);
+        }
+
+        countSuccess++;
+      } catch (err) {
+        console.warn(`Aviso na sincronização de ${op.name}:`, err);
+      }
+    }
+
+    setSyncingOperators(false);
+    setSyncProgress(null);
+    alert(`Sincronização concluída com sucesso! ${countSuccess} operadores configurados para login via Matrícula com a senha padrão "123456".`);
+    onRefreshUsers();
+  };
+
   return (
     <div className="space-y-6">
       
@@ -248,10 +344,19 @@ export default function UserManagement({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleSyncOperators}
+            disabled={syncingOperators}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-3.5 rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            title="Criar logins no Supabase Auth para todos os operadores com matrícula"
+          >
+            <UserCheck className="w-4 h-4" />
+            {syncingOperators ? 'Sincronizando...' : 'Gerar Logins Operadores (123456)'}
+          </button>
           <button
             onClick={onRefreshUsers}
-            className="p-2 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+            className="p-2 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer"
             title="Recarregar Usuários"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -259,11 +364,43 @@ export default function UserManagement({
           </button>
           <button
             onClick={handleOpenCreate}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg transition-colors shadow-sm"
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg transition-colors shadow-sm cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
             Criar Novo Usuário
           </button>
+        </div>
+      </div>
+
+      {/* Barra de Progresso de Sincronização em Lote */}
+      {syncProgress && (
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl space-y-2 animate-pulse">
+          <div className="flex justify-between text-xs font-bold text-emerald-900 dark:text-emerald-300">
+            <span>Criando logins dos operadores no Supabase Auth (Senha 123456)...</span>
+            <span>{syncProgress.current} / {syncProgress.total}</span>
+          </div>
+          <div className="w-full bg-emerald-200 dark:bg-emerald-900 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-emerald-600 h-2 transition-all duration-200"
+              style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+            Processando operador: <strong>{syncProgress.currentName}</strong>
+          </p>
+        </div>
+      )}
+
+      {/* Info Card sobre Confirmação de E-mail no Supabase */}
+      <div className="p-4 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 rounded-xl flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-900 dark:text-amber-200 space-y-1">
+          <p className="font-bold">
+            Atenção sobre o Acesso dos Novos Usuários (Supabase Auth)
+          </p>
+          <p className="text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+            Se algum usuário receber o aviso <strong>"Email not confirmed"</strong> na tela de login, o Supabase está aguardando confirmação por link de e-mail. Para que todos os logins criados acessem imediatamente com a senha, certifique-se de <strong>desativar a opção "Confirm email"</strong> no painel do Supabase em <em>Authentication &gt; Providers &gt; Email</em> ou confirme os e-mails pendentes no <em>SQL Editor</em>.
+          </p>
         </div>
       </div>
 
@@ -303,6 +440,7 @@ export default function UserManagement({
                 <th className="px-6 py-3.5">E-mail</th>
                 <th className="px-6 py-3.5">Cargo / Papel</th>
                 <th className="px-6 py-3.5">Vínculo Direto</th>
+                <th className="px-6 py-3.5 text-center">Auth / Login</th>
                 <th className="px-6 py-3.5 text-center">Status</th>
                 <th className="px-6 py-3.5 text-right">Ações</th>
               </tr>
@@ -310,7 +448,7 @@ export default function UserManagement({
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-sm text-zinc-800 dark:text-zinc-200">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-10 text-zinc-500 text-xs">
+                  <td colSpan="7" className="text-center py-10 text-zinc-500 text-xs">
                     Nenhum usuário cadastrado ou encontrado para os filtros selecionados.
                   </td>
                 </tr>
@@ -332,6 +470,21 @@ export default function UserManagement({
                     </td>
                     <td className="px-6 py-3.5 text-xs">
                       {getLinkedEntityName(u)}
+                    </td>
+                    <td className="px-6 py-3.5 text-center">
+                      {u.email === 'edson_jz@hotmail.com' || u.auth_user_id ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3" /> Vinculado
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleOpenEdit(u)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded-full hover:bg-amber-100 transition-colors"
+                          title="Clique para definir a senha e criar o login no Supabase Auth"
+                        >
+                          <AlertCircle className="w-3 h-3" /> Criar Login
+                        </button>
+                      )}
                     </td>
                     <td className="px-6 py-3.5 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
@@ -426,19 +579,43 @@ export default function UserManagement({
                 />
               </div>
 
-              {/* Senha (só no cadastro novo) */}
-              {!editingUser && (
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-zinc-500 dark:text-zinc-400">Senha Inicial (mínimo 6 dígitos)</label>
+              {/* Senha: se for cadastro novo OU se for edição de usuário que ainda não possui login no Auth */}
+              {(!editingUser || !editingUser.auth_user_id) ? (
+                <div className="space-y-1.5 bg-blue-50/40 dark:bg-blue-950/20 p-3 rounded-lg border border-blue-200 dark:border-blue-900/30">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-blue-900 dark:text-blue-300">
+                      {editingUser ? 'Criar Senha de Acesso Inicial (Supabase Auth)' : 'Senha Inicial (mínimo 6 dígitos)'}
+                    </label>
+                    {editingUser && (
+                      <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded font-bold">
+                        Login Pendente
+                      </span>
+                    )}
+                  </div>
+                  {editingUser && (
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Este usuário ainda não possui conta de autenticação criada. Digite uma senha para registrar o login dele agora.
+                    </p>
+                  )}
                   <input
                     type="password"
-                    required
+                    required={!editingUser}
                     minLength={6}
                     placeholder="••••••••"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-zinc-950 dark:text-zinc-100"
                   />
+                </div>
+              ) : (
+                <div className="p-3 bg-zinc-50 dark:bg-zinc-900/40 rounded-lg border border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Conta vinculada ao Supabase Auth
+                  </span>
+                  <span className="font-mono text-[10px] text-zinc-400">
+                    ID: {editingUser.auth_user_id ? `${editingUser.auth_user_id.slice(0, 8)}...` : 'Ativo'}
+                  </span>
                 </div>
               )}
 

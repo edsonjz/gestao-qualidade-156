@@ -30,17 +30,19 @@ export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount, us
         { id: 'dashboard', label: 'Dashboard da Equipe', icon: LayoutDashboard },
         { id: 'queue', label: 'Fila de Feedbacks', icon: UserCheck },
         { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
+        { id: 'audits', label: 'Auditorias', icon: Sparkles },
         { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },
       ];
     }
 
-    // 3. Monitor(a): Fila de monitoria, Dashboard, Operadores, Histórico, Checklist
+    // 3. Monitor(a): Fila de monitoria, Dashboard, Operadores, Histórico, Auditorias, Checklist
     if (userRole === 'monitor') {
       return [
         { id: 'queue', label: 'Fila de Monitoria', icon: UserCheck },
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'operators', label: 'Operadores', icon: Users },
         { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
+        { id: 'audits', label: 'Auditorias', icon: Sparkles },
         { id: 'config', label: 'Checklist de Qualidade', icon: Settings },
       ];
     }
@@ -51,6 +53,7 @@ export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount, us
       { id: 'queue', label: 'Fila Inteligente', icon: UserCheck },
       { id: 'operators', label: 'Operadores', icon: Users },
       { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
+      { id: 'audits', label: 'Auditorias', icon: Sparkles },
       { id: 'monitors', label: 'Qualidade & Equipes', icon: Award },
       { id: 'intelligence', label: 'Inteligência Analítica', icon: Brain, badge: unreadAlertsCount },
       { id: 'reports', label: 'Relatórios', icon: FileSpreadsheet },

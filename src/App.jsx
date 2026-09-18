@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from './supabaseClient';
+import { supabase, createEphemeralClient } from './supabaseClient';
 
 // Importar Componentes
 import Sidebar from './components/Sidebar';
@@ -14,11 +14,13 @@ import ConfigChecklist from './components/ConfigChecklist';
 import MonitoringsHistory from './components/MonitoringsHistory';
 import UserManagement from './components/UserManagement';
 import OperatorPortal from './components/OperatorPortal';
+import Audits from './components/Audits';
 
 // Modais
 import MonitoringModal from './components/MonitoringModal';
 import FeedbackModal from './components/FeedbackModal';
 import OperatorProfileModal from './components/OperatorProfileModal';
+import AuditModal from './components/AuditModal';
 import Login from './components/Login';
 
 export default function App() {
@@ -38,6 +40,7 @@ export default function App() {
   // Estados de Dados
   const [operators, setOperators] = useState([]);
   const [monitorings, setMonitorings] = useState([]);
+  const [audits, setAudits] = useState([]);
   const [monitors, setMonitors] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
   const [checklistItems, setChecklistItems] = useState([]);
@@ -50,6 +53,8 @@ export default function App() {
   const [selectedOperatorForFeedback, setSelectedOperatorForFeedback] = useState(null);
   const [selectedOperatorForProfile, setSelectedOperatorForProfile] = useState(null);
   const [editingMonitoring, setEditingMonitoring] = useState(null);
+  const [selectedOperatorForAudit, setSelectedOperatorForAudit] = useState(null);
+  const [selectedAuditForView, setSelectedAuditForView] = useState(null);
   
   // Modais de Cadastro Manual
   const [showOpForm, setShowOpForm] = useState(false);
@@ -96,20 +101,24 @@ export default function App() {
         .eq('email', email)
         .maybeSingle();
 
+      const isOpEmail = email.startsWith('op_');
+      const extractedMatricula = currentSession.user.user_metadata?.matricula || (isOpEmail ? email.replace(/^op_/, '').split('@')[0] : null);
+
       if (data && data.active !== false) {
-        setCurrentUser(data);
-        setUserRole(data.role || 'monitor');
-        if (data.role === 'operador') {
+        setCurrentUser({ ...data, matricula: data.matricula || extractedMatricula });
+        setUserRole(data.role || (isOpEmail ? 'operador' : 'monitor'));
+        if (data.role === 'operador' || isOpEmail) {
           setActiveTab('portal');
         }
       } else {
-        // Fallback para role nos metadados ou monitor
-        const roleFromMeta = currentSession.user.user_metadata?.role || 'monitor';
+        // Fallback para role nos metadados ou operador/monitor
+        const roleFromMeta = isOpEmail ? 'operador' : (currentSession.user.user_metadata?.role || 'monitor');
         const profile = {
           id: currentSession.user.id,
           email: email,
-          name: currentSession.user.user_metadata?.name || email.split('@')[0],
-          role: roleFromMeta
+          name: currentSession.user.user_metadata?.name || (isOpEmail ? `Operador (${extractedMatricula})` : email.split('@')[0]),
+          role: roleFromMeta,
+          matricula: extractedMatricula
         };
         setCurrentUser(profile);
         setUserRole(roleFromMeta);
@@ -227,6 +236,17 @@ export default function App() {
         .order('monitoring_date', { ascending: false });
       setMonitorings(monitoringsData || []);
 
+      // f. Auditorias de Desenvolvimento (sem nota)
+      try {
+        const { data: auditsData } = await supabase
+          .from('q_audits')
+          .select('*, q_operators(name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala)')
+          .order('audit_date', { ascending: false });
+        setAudits(auditsData || []);
+      } catch (aErr) {
+        console.warn('Tabela q_audits ainda não criada ou inacessível:', aErr);
+      }
+
     } catch (err) {
       console.error('Erro ao buscar dados dinâmicos do Supabase:', err);
     } finally {
@@ -239,6 +259,40 @@ export default function App() {
       fetchStaticData();
       fetchData();
       fetchUsers();
+
+      // Sincronização periódica leve das travas concorrentes a cada 15 segundos
+      const lockInterval = setInterval(async () => {
+        try {
+          const { data: locks } = await supabase
+            .from('q_operators')
+            .select('id, locked_by_monitor_id, locked_by_monitor_name, locked_at, status_feedback, last_monitoring_at');
+          if (locks && locks.length > 0) {
+            setOperators(prev => prev.map(op => {
+              const fresh = locks.find(l => l.id === op.id);
+              if (!fresh) return op;
+              if (
+                fresh.locked_by_monitor_id !== op.locked_by_monitor_id || 
+                fresh.locked_at !== op.locked_at ||
+                fresh.status_feedback !== op.status_feedback
+              ) {
+                return {
+                  ...op,
+                  locked_by_monitor_id: fresh.locked_by_monitor_id,
+                  locked_by_monitor_name: fresh.locked_by_monitor_name,
+                  locked_at: fresh.locked_at,
+                  status_feedback: fresh.status_feedback,
+                  last_monitoring_at: fresh.last_monitoring_at
+                };
+              }
+              return op;
+            }));
+          }
+        } catch (e) {
+          // ignore silent poll failure
+        }
+      }, 15000);
+
+      return () => clearInterval(lockInterval);
     }
   }, [fetchStaticData, fetchData, fetchUsers, session]);
 
@@ -361,7 +415,8 @@ export default function App() {
         } else {
           let authUserId = null;
           if (password && password.length >= 6) {
-            const { data: authData, error: authErr } = await supabase.auth.signUp({
+            const ephemeralAuth = createEphemeralClient();
+            const { data: authData, error: authErr } = await ephemeralAuth.auth.signUp({
               email,
               password,
               options: {
@@ -453,7 +508,8 @@ export default function App() {
         } else {
           let authUserId = null;
           if (password && password.length >= 6) {
-            const { data: authData, error: authErr } = await supabase.auth.signUp({
+            const ephemeralAuth = createEphemeralClient();
+            const { data: authData, error: authErr } = await ephemeralAuth.auth.signUp({
               email,
               password,
               options: {
@@ -672,31 +728,40 @@ export default function App() {
   }, [monitors, currentUser]);
 
   const handleStartMonitoring = async (op) => {
-    // Verificar se já está bloqueado por outra monitora nos últimos 30 min
-    const isLocked = Boolean(
-      op.locked_at && 
-      (new Date() - new Date(op.locked_at)) < 30 * 60 * 1000
-    );
-    const activeMonId = activeMonitorObj?.id;
-
-    if (isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id !== activeMonId) {
-      alert(`Atenção: O operador ${op.name} já está em processo de avaliação por ${op.locked_by_monitor_name || 'outra monitora'} neste momento.\n\nPara evitar duplicidade de avaliação simultânea, selecione outro operador.`);
-      return;
-    }
-
+    // 1. Sempre consultar o banco em tempo real antes de validar para garantir que não pega dado desatualizado do navegador
     try {
+      const { data: freshOp } = await supabase
+        .from('q_operators')
+        .select('id, name, locked_by_monitor_id, locked_by_monitor_name, locked_at')
+        .eq('id', op.id)
+        .maybeSingle();
+
+      const currentOp = freshOp || op;
+      const isLocked = Boolean(
+        currentOp.locked_at && 
+        (new Date() - new Date(currentOp.locked_at)) < 30 * 60 * 1000
+      );
+      const activeUserId = currentUser?.id || activeMonitorObj?.id;
+
+      if (isLocked && currentOp.locked_by_monitor_id && currentOp.locked_by_monitor_id !== activeUserId) {
+        alert(`Atenção: O operador ${op.name} está em atendimento/avaliação por ${currentOp.locked_by_monitor_name || 'outro usuário'} neste momento.\n\nPara evitar duplicidade, selecione outro operador.`);
+        fetchData();
+        return;
+      }
+
       // Registrar trava no Supabase
+      const lockedName = currentUser?.name || activeMonitorObj?.name || 'Monitora';
       await supabase.from('q_operators').update({
-        locked_by_monitor_id: activeMonId,
-        locked_by_monitor_name: activeMonitorObj?.name || currentUser?.name || 'Monitora',
+        locked_by_monitor_id: activeUserId,
+        locked_by_monitor_name: lockedName,
         locked_at: new Date().toISOString()
       }).eq('id', op.id);
 
       // Atualizar no estado local
       setOperators(prev => prev.map(o => o.id === op.id ? {
         ...o,
-        locked_by_monitor_id: activeMonId,
-        locked_by_monitor_name: activeMonitorObj?.name || currentUser?.name || 'Monitora',
+        locked_by_monitor_id: activeUserId,
+        locked_by_monitor_name: lockedName,
         locked_at: new Date().toISOString()
       } : o));
 
@@ -707,18 +772,21 @@ export default function App() {
     }
   };
 
-  // Liberar trava ao fechar modal de monitoria
+  // Liberar trava ao fechar/cancelar modal de monitoria imediatamente
   const handleCloseMonitoringModal = async () => {
-    if (selectedOperatorForMonitoring) {
-      const opId = selectedOperatorForMonitoring.id;
+    const opToUnlock = selectedOperatorForMonitoring;
+    setSelectedOperatorForMonitoring(null);
+    setEditingMonitoring(null);
+
+    if (opToUnlock) {
       try {
         await supabase.from('q_operators').update({
           locked_by_monitor_id: null,
           locked_by_monitor_name: null,
           locked_at: null
-        }).eq('id', opId);
+        }).eq('id', opToUnlock.id);
 
-        setOperators(prev => prev.map(o => o.id === opId ? {
+        setOperators(prev => prev.map(o => o.id === opToUnlock.id ? {
           ...o,
           locked_by_monitor_id: null,
           locked_by_monitor_name: null,
@@ -728,8 +796,131 @@ export default function App() {
         console.warn('Erro ao liberar trava do operador:', e);
       }
     }
-    setSelectedOperatorForMonitoring(null);
-    setEditingMonitoring(null);
+  };
+
+  // 9. Concorrência e Handlers de Auditoria Formativa (Sem Nota)
+  const handleStartAudit = async (op) => {
+    try {
+      const { data: freshOp } = await supabase
+        .from('q_operators')
+        .select('id, name, locked_by_monitor_id, locked_by_monitor_name, locked_at')
+        .eq('id', op.id)
+        .maybeSingle();
+
+      const currentOp = freshOp || op;
+      const isLocked = Boolean(
+        currentOp.locked_at && 
+        (new Date() - new Date(currentOp.locked_at)) < 30 * 60 * 1000
+      );
+      const activeUserId = currentUser?.id || activeMonitorObj?.id;
+
+      if (isLocked && currentOp.locked_by_monitor_id && currentOp.locked_by_monitor_id !== activeUserId) {
+        alert(`Atenção: O operador ${op.name} já está em processo de avaliação/auditoria por ${currentOp.locked_by_monitor_name || 'outro usuário'}.\n\nPara evitar conflito, selecione outro operador.`);
+        fetchData();
+        return;
+      }
+
+      const lockedName = currentUser?.name || 'Avaliador';
+      await supabase.from('q_operators').update({
+        locked_by_monitor_id: activeUserId,
+        locked_by_monitor_name: lockedName,
+        locked_at: new Date().toISOString()
+      }).eq('id', op.id);
+
+      setOperators(prev => prev.map(o => o.id === op.id ? {
+        ...o,
+        locked_by_monitor_id: activeUserId,
+        locked_by_monitor_name: lockedName,
+        locked_at: new Date().toISOString()
+      } : o));
+
+      setSelectedOperatorForAudit(op);
+      setSelectedAuditForView(null);
+    } catch (err) {
+      console.warn('Erro ao iniciar auditoria:', err);
+      setSelectedOperatorForAudit(op);
+    }
+  };
+
+  const handleCloseAuditModal = async () => {
+    const opToUnlock = selectedOperatorForAudit;
+    setSelectedOperatorForAudit(null);
+    setSelectedAuditForView(null);
+
+    if (opToUnlock) {
+      try {
+        await supabase.from('q_operators').update({
+          locked_by_monitor_id: null,
+          locked_by_monitor_name: null,
+          locked_at: null
+        }).eq('id', opToUnlock.id);
+
+        setOperators(prev => prev.map(o => o.id === opToUnlock.id ? {
+          ...o,
+          locked_by_monitor_id: null,
+          locked_by_monitor_name: null,
+          locked_at: null
+        } : o));
+      } catch (e) {
+        console.warn('Erro ao liberar trava da auditoria:', e);
+      }
+    }
+  };
+
+  const handleSaveAudit = async (payload) => {
+    try {
+      if (payload.id) {
+        const { error } = await supabase
+          .from('q_audits')
+          .update(payload)
+          .eq('id', payload.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('q_audits')
+          .insert([payload]);
+        if (error) throw error;
+      }
+
+      if (selectedOperatorForAudit) {
+        try {
+          await supabase.from('q_operators').update({
+            locked_by_monitor_id: null,
+            locked_by_monitor_name: null,
+            locked_at: null
+          }).eq('id', selectedOperatorForAudit.id);
+        } catch (e) {
+          console.warn('Erro ao destravar pós auditoria:', e);
+        }
+      }
+
+      setSelectedOperatorForAudit(null);
+      setSelectedAuditForView(null);
+      fetchData();
+    } catch (err) {
+      console.error('Erro ao salvar auditoria:', err);
+      alert('Erro ao salvar auditoria no Supabase: ' + (err.message || ''));
+    }
+  };
+
+  // Forçar liberação de trava (Desbloqueio manual de emergência)
+  const handleForceUnlockOperator = async (opId) => {
+    try {
+      await supabase.from('q_operators').update({
+        locked_by_monitor_id: null,
+        locked_by_monitor_name: null,
+        locked_at: null
+      }).eq('id', opId);
+
+      setOperators(prev => prev.map(o => o.id === opId ? {
+        ...o,
+        locked_by_monitor_id: null,
+        locked_by_monitor_name: null,
+        locked_at: null
+      } : o));
+    } catch (e) {
+      console.error('Erro ao liberar trava do operador:', e);
+    }
   };
 
   // Salvar monitoria (criar ou editar)
@@ -935,6 +1126,7 @@ export default function App() {
                   currentUser={currentUser}
                   operator={loggedOperator}
                   monitorings={monitorings}
+                  audits={audits}
                 />
               )}
 
@@ -956,6 +1148,7 @@ export default function App() {
                   activeCycle={activeCycle}
                   onStartMonitoring={handleStartMonitoring}
                   onOpenFeedback={(op) => setSelectedOperatorForFeedback(op)}
+                  onForceUnlock={handleForceUnlockOperator}
                   currentMonitor={activeMonitorObj}
                   isLoading={isLoading}
                 />
@@ -1000,6 +1193,24 @@ export default function App() {
                   onDeleteMonitoring={handleDeleteMonitoring}
                   activeProfile={{ role: userRole }}
                   darkMode={darkMode}
+                />
+              )}
+
+              {/* Nova Aba: Auditorias de Desenvolvimento (Sem Nota) */}
+              {!isOperator && activeTab === 'audits' && (
+                <Audits 
+                  audits={audits}
+                  operators={filteredOperators}
+                  supervisors={supervisors}
+                  currentUser={currentUser}
+                  onStartAudit={handleStartAudit}
+                  onViewAudit={(audit) => {
+                    const op = operators.find(o => o.id === audit.operator_id) || audit.q_operators || { id: audit.operator_id, name: audit.operator_name };
+                    setSelectedOperatorForAudit(op);
+                    setSelectedAuditForView(audit);
+                  }}
+                  onRefresh={fetchData}
+                  isLoading={isLoading}
                 />
               )}
 
@@ -1076,6 +1287,17 @@ export default function App() {
           onClose={handleCloseMonitoringModal}
           onSave={handleSaveMonitoring}
           monitoring={editingMonitoring}
+        />
+      )}
+
+      {/* Modal: Realizar/Visualizar Auditoria Formativa (Sem Nota) */}
+      {selectedOperatorForAudit && (
+        <AuditModal
+          operator={selectedOperatorForAudit}
+          auditor={currentUser}
+          onClose={handleCloseAuditModal}
+          onSave={handleSaveAudit}
+          audit={selectedAuditForView}
         />
       )}
 

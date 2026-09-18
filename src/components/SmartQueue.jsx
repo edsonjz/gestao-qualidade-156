@@ -17,6 +17,7 @@ export default function SmartQueue({
   activeCycle, 
   onStartMonitoring, 
   onOpenFeedback,
+  onForceUnlock,
   currentMonitor,
   isLoading 
 }) {
@@ -117,6 +118,7 @@ export default function SmartQueue({
                     op={op} 
                     idx={idx + 1} 
                     onStartMonitoring={onStartMonitoring}
+                    onForceUnlock={onForceUnlock}
                     currentMonitorId={currentMonitor?.id}
                   />
                 ))
@@ -133,6 +135,7 @@ export default function SmartQueue({
                     op={op} 
                     idx={idx + 1} 
                     onStartMonitoring={onStartMonitoring} 
+                    onForceUnlock={onForceUnlock}
                     currentMonitorId={currentMonitor?.id}
                   />
                 ))
@@ -224,7 +227,7 @@ export default function SmartQueue({
 }
 
 // Sub-componente de Linha da Fila com verificação de concorrência (Lock)
-function OperatorRow({ op, idx, onStartMonitoring, currentMonitorId }) {
+function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitorId }) {
   const isBlocked = op.status_feedback === 'Aguardando Feedback';
 
   // Verificação de Lock de Concorrência (< 30 minutos)
@@ -265,7 +268,7 @@ function OperatorRow({ op, idx, onStartMonitoring, currentMonitorId }) {
             {isLockedByOther && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse">
                 <Lock className="w-3 h-3" />
-                Em avaliação por {op.locked_by_monitor_name || 'outra monitora'}
+                Em avaliação por {op.locked_by_monitor_name || 'outro usuário'}
               </span>
             )}
           </div>
@@ -297,14 +300,30 @@ function OperatorRow({ op, idx, onStartMonitoring, currentMonitorId }) {
             Bloqueado
           </button>
         ) : isLockedByOther ? (
-          <button 
-            disabled 
-            title={`Bloqueado por ${op.locked_by_monitor_name || 'outra monitora'}`}
-            className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-bold py-1.5 px-3 rounded-lg cursor-not-allowed border border-amber-200 dark:border-amber-900"
-          >
-            <Lock className="w-3 h-3" />
-            Em Uso
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button 
+              disabled 
+              title={`Bloqueado por ${op.locked_by_monitor_name || 'outro usuário'}`}
+              className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-bold py-1.5 px-3 rounded-lg cursor-not-allowed border border-amber-200 dark:border-amber-900"
+            >
+              <Lock className="w-3 h-3" />
+              Em Uso
+            </button>
+            {onForceUnlock && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Deseja forçar a liberação da trava do operador ${op.name}?`)) {
+                    onForceUnlock(op.id);
+                  }
+                }}
+                title="Desbloquear se o usuário anterior abandonou a tela"
+                className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline font-semibold cursor-pointer p-1"
+              >
+                Liberar
+              </button>
+            )}
+          </div>
         ) : (
           <button 
             onClick={() => onStartMonitoring(op)}

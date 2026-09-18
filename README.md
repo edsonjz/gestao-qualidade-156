@@ -145,23 +145,104 @@ CREATE TABLE IF NOT EXISTS public.q_monitorings (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- RLS & Políticas
+-- 7. Auditorias de Desenvolvimento (Formativas, Sem Nota)
+CREATE TABLE IF NOT EXISTS public.q_audits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id UUID NOT NULL REFERENCES public.q_operators(id) ON DELETE CASCADE,
+    auditor_id UUID,
+    auditor_name TEXT NOT NULL,
+    auditor_role TEXT NOT NULL CHECK (auditor_role IN ('monitor', 'supervisor', 'admin')),
+    audit_date TIMESTAMPTZ DEFAULT now(),
+    call_date TIMESTAMPTZ,
+    call_duration TEXT,
+    call_protocol TEXT,
+    topic TEXT DEFAULT 'Atendimento e Postura',
+    strengths TEXT,
+    improvements TEXT,
+    action_plan TEXT,
+    general_notes TEXT,
+    status TEXT DEFAULT 'Realizada',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS & Políticas de Segurança
+ALTER TABLE public.q_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_cycles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_supervisors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_monitors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_checklist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_operators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_monitorings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.q_audits ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Acesso q_cycles" ON public.q_cycles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acesso q_supervisors" ON public.q_supervisors FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acesso q_monitors" ON public.q_monitors FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acesso q_checklist_items" ON public.q_checklist_items FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acesso q_operators" ON public.q_operators FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acesso q_monitorings" ON public.q_monitorings FOR ALL USING (true) WITH CHECK (true);
+-- Políticas Seguras: Apenas usuários autenticados têm acesso operacional
+CREATE POLICY "Leitura q_users para autenticados" ON public.q_users 
+    FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Gerenciamento q_users apenas admin" ON public.q_users 
+    FOR ALL TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.q_users 
+            WHERE email = auth.jwt()->>'email' AND role = 'admin'
+        ) OR auth.jwt()->>'email' = 'edson_jz@hotmail.com'
+    ) WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.q_users 
+            WHERE email = auth.jwt()->>'email' AND role = 'admin'
+        ) OR auth.jwt()->>'email' = 'edson_jz@hotmail.com'
+    );
+
+CREATE POLICY "Acesso q_cycles autenticados" ON public.q_cycles FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_supervisors autenticados" ON public.q_supervisors FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_monitors autenticados" ON public.q_monitors FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_checklist_items autenticados" ON public.q_checklist_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_operators autenticados" ON public.q_operators FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_monitorings autenticados" ON public.q_monitorings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_audits autenticados" ON public.q_audits FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 INSERT INTO public.q_cycles (cycle_number, status, started_at) VALUES (1, 'Ativo', now()) ON CONFLICT DO NOTHING;
+
+-- =========================================================================
+-- 🔐 CORREÇÃO CRÍTICA DO ERRO "EMAIL NOT CONFIRMED" NO SUPABASE AUTH
+-- =========================================================================
+-- 1. Confirmar imediatamente todos os usuários existentes que estão bloqueados:
+UPDATE auth.users 
+SET email_confirmed_at = now() 
+WHERE email_confirmed_at IS NULL;
+
+-- 2. Trigger automático para auto-confirmar todos os novos logins criados:
+CREATE OR REPLACE FUNCTION public.handle_new_user_autoconfirm()
+RETURNS trigger AS $$
+BEGIN
+  NEW.email_confirmed_at = COALESCE(NEW.email_confirmed_at, now());
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_autoconfirm ON auth.users;
+CREATE TRIGGER on_auth_user_created_autoconfirm
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user_autoconfirm();
 ```
+
+---
+
+## 🔒 Configurações de Segurança e Acesso no Painel do Supabase
+
+### 1. Desativar Exigência de Confirmação por Link de E-mail
+1. Acesse o [Supabase Dashboard](https://supabase.com/dashboard).
+2. Vá em **Authentication** > **Providers** > **Email**.
+3. Desmarque a opção **"Confirm email"**.
+4. Clique em **Save**.
+*Com isso, qualquer login criado pelo Administrador Master ou tela de gestão poderá acessar imediatamente com sua senha, sem depender de SMTP ou clicar em e-mails externos.*
+
+### 2. Executar o Script de Confirmação e Gatilho
+Vá em **SQL Editor** no painel do Supabase e execute o bloco de código acima. Ele:
+* Desbloqueia os usuários que receberam o erro `Email not confirmed` (ex: `ana.remiao@...`, `ivete.santos@...`).
+* Garante que qualquer cadastro futuro seja confirmado automaticamente.
+* Protege as tabelas contra acessos anônimos não autorizados via RLS.
+
 
 ---
 
