@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, UserCheck, HeartHandshake, Lightbulb, FileText } from 'lucide-react';
+import { X, Sparkles, UserCheck, HeartHandshake, Lightbulb, FileText, Layers } from 'lucide-react';
+import AuditTopicsModal from './AuditTopicsModal';
 
 export default function AuditModal({ 
   operator, 
   auditor, 
   onClose, 
   onSave, 
-  audit = null 
+  audit = null,
+  auditTopics = [],
+  onAddTopic,
+  onUpdateTopic,
+  onDeleteTopic,
+  audits = []
 }) {
-  const [topic, setTopic] = useState(audit?.topic || 'Atendimento e Postura');
+  const defaultTopic = audit?.topic || (auditTopics.length > 0 ? auditTopics[0].name : 'Atendimento e Postura');
+  const [topic, setTopic] = useState(defaultTopic);
   const [callProtocol, setCallProtocol] = useState(audit?.call_protocol || '');
   const [callDuration, setCallDuration] = useState(audit?.call_duration || '');
   const [strengths, setStrengths] = useState(audit?.strengths || '');
@@ -17,6 +24,7 @@ export default function AuditModal({
   const [generalNotes, setGeneralNotes] = useState(audit?.general_notes || '');
   const [status, setStatus] = useState(audit?.status || 'Realizada');
   const [isSaving, setIsSaving] = useState(false);
+  const [showManageTopicsModal, setShowManageTopicsModal] = useState(false);
 
   // Fechar ao pressionar a tecla Escape
   useEffect(() => {
@@ -135,20 +143,43 @@ export default function AuditModal({
           {/* Dados do Atendimento Auditado */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <label className="font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider text-[10px]">
-                Tema Principal da Auditoria
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider text-[10px]">
+                  Tema Principal da Auditoria
+                </label>
+                {onAddTopic && (
+                  <button
+                    type="button"
+                    onClick={() => setShowManageTopicsModal(true)}
+                    className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    title="Incluir, editar ou excluir temas da auditoria"
+                  >
+                    <Layers className="w-3 h-3" />
+                    Gerenciar
+                  </button>
+                )}
+              </div>
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm font-semibold text-zinc-900 dark:text-zinc-100 outline-none"
               >
-                <option value="Atendimento e Postura">Atendimento, Postura e Empatia</option>
-                <option value="Procedimentos 156">Procedimentos e Regras 156</option>
-                <option value="Comunicação e Clareza">Comunicação, Clareza e Dicção</option>
-                <option value="Navegação em Sistemas">Agilidade e Navegação em Sistemas</option>
-                <option value="Acompanhamento e Reciclagem">Acompanhamento / Reciclagem</option>
-                <option value="Geral">Desenvolvimento Geral</option>
+                {auditTopics && auditTopics.length > 0 ? (
+                  auditTopics.map(t => (
+                    <option key={t.id || t.name} value={t.name}>
+                      {t.name} {t.description ? `(${t.description})` : ''}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="Atendimento e Postura">Atendimento, Postura e Empatia</option>
+                    <option value="Procedimentos 156">Procedimentos e Regras 156</option>
+                    <option value="Comunicação e Clareza">Comunicação, Clareza e Dicção</option>
+                    <option value="Navegação em Sistemas">Agilidade e Navegação em Sistemas</option>
+                    <option value="Acompanhamento e Reciclagem">Acompanhamento / Reciclagem</option>
+                    <option value="Geral">Desenvolvimento Geral</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -285,6 +316,19 @@ export default function AuditModal({
         </form>
 
       </div>
+
+      {/* Modal Embutido para Gerenciar Temas sem sair da Auditoria */}
+      {showManageTopicsModal && (
+        <AuditTopicsModal
+          topics={auditTopics}
+          audits={audits}
+          onClose={() => setShowManageTopicsModal(false)}
+          onAddTopic={onAddTopic}
+          onUpdateTopic={onUpdateTopic}
+          onDeleteTopic={onDeleteTopic}
+          onSelectTopic={(selectedThemeName) => setTopic(selectedThemeName)}
+        />
+      )}
     </div>
   );
 }

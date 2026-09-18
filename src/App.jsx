@@ -21,6 +21,7 @@ import MonitoringModal from './components/MonitoringModal';
 import FeedbackModal from './components/FeedbackModal';
 import OperatorProfileModal from './components/OperatorProfileModal';
 import AuditModal from './components/AuditModal';
+import AuditTopicsModal from './components/AuditTopicsModal';
 import Login from './components/Login';
 
 export default function App() {
@@ -45,6 +46,24 @@ export default function App() {
   const [supervisors, setSupervisors] = useState([]);
   const [checklistItems, setChecklistItems] = useState([]);
   const [activeCycle, setActiveCycle] = useState(null);
+  
+  // Temas Principais da Auditoria Formativa
+  const [auditTopics, setAuditTopics] = useState(() => {
+    try {
+      const cached = localStorage.getItem('q_audit_topics');
+      return cached ? JSON.parse(cached) : [
+        { id: 'topic-1', name: 'Atendimento e Postura', description: 'Atendimento, Postura e Empatia', color: 'blue' },
+        { id: 'topic-2', name: 'Procedimentos 156', description: 'Procedimentos e Regras 156', color: 'purple' },
+        { id: 'topic-3', name: 'Comunicação e Clareza', description: 'Comunicação, Clareza e Dicção', color: 'emerald' },
+        { id: 'topic-4', name: 'Navegação em Sistemas', description: 'Agilidade e Navegação em Sistemas', color: 'amber' },
+        { id: 'topic-5', name: 'Acompanhamento e Reciclagem', description: 'Acompanhamento / Reciclagem', color: 'indigo' },
+        { id: 'topic-6', name: 'Geral', description: 'Desenvolvimento Geral', color: 'zinc' }
+      ];
+    } catch {
+      return [];
+    }
+  });
+  const [showAuditTopicsModal, setShowAuditTopicsModal] = useState(false);
   
   const [isLoading, setIsLoading] = useState(true);
 
@@ -193,6 +212,37 @@ export default function App() {
         .select('id, label, weight')
         .order('weight', { ascending: false });
       setChecklistItems(checklistData || []);
+
+      // e. Temas da Auditoria Formativa
+      try {
+        const { data: topicsData, error: topicsErr } = await supabase
+          .from('q_audit_topics')
+          .select('*')
+          .order('created_at', { ascending: true });
+        
+        if (topicsErr || !topicsData || topicsData.length === 0) {
+          const cached = localStorage.getItem('q_audit_topics');
+          if (cached) {
+            setAuditTopics(JSON.parse(cached));
+          } else {
+            const defaults = [
+              { id: 'topic-1', name: 'Atendimento e Postura', description: 'Atendimento, Postura e Empatia', color: 'blue' },
+              { id: 'topic-2', name: 'Procedimentos 156', description: 'Procedimentos e Regras 156', color: 'purple' },
+              { id: 'topic-3', name: 'Comunicação e Clareza', description: 'Comunicação, Clareza e Dicção', color: 'emerald' },
+              { id: 'topic-4', name: 'Navegação em Sistemas', description: 'Agilidade e Navegação em Sistemas', color: 'amber' },
+              { id: 'topic-5', name: 'Acompanhamento e Reciclagem', description: 'Acompanhamento / Reciclagem', color: 'indigo' },
+              { id: 'topic-6', name: 'Geral', description: 'Desenvolvimento Geral', color: 'zinc' }
+            ];
+            setAuditTopics(defaults);
+            localStorage.setItem('q_audit_topics', JSON.stringify(defaults));
+          }
+        } else {
+          setAuditTopics(topicsData);
+          localStorage.setItem('q_audit_topics', JSON.stringify(topicsData));
+        }
+      } catch (tErr) {
+        console.warn('Carregando temas de auditoria do cache local:', tErr);
+      }
 
     } catch (err) {
       console.error('Erro ao buscar dados estáticos do Supabase:', err);
@@ -704,6 +754,92 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao excluir critério:', err);
     }
+  };
+
+  // 6.b CRUD Temas da Auditoria Formativa
+  const handleAddAuditTopic = async ({ name, description, color }) => {
+    const newTopic = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `topic-${Date.now()}`,
+      name: name.trim(),
+      description: description ? description.trim() : '',
+      color: color || 'blue',
+      created_at: new Date().toISOString()
+    };
+
+    let savedTopic = newTopic;
+    try {
+      const { data, error } = await supabase
+        .from('q_audit_topics')
+        .insert([{
+          name: newTopic.name,
+          description: newTopic.description,
+          color: newTopic.color
+        }])
+        .select()
+        .single();
+      
+      if (!error && data) {
+        savedTopic = data;
+      }
+    } catch (e) {
+      console.warn('Persistindo tema de auditoria localmente (q_audit_topics offline):', e);
+    }
+
+    setAuditTopics(prev => {
+      const updated = [...prev, savedTopic];
+      localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      return updated;
+    });
+
+    return savedTopic;
+  };
+
+  const handleUpdateAuditTopic = async (id, fields, oldName) => {
+    try {
+      await supabase
+        .from('q_audit_topics')
+        .update(fields)
+        .eq('id', id);
+    } catch (e) {
+      console.warn('Erro ao atualizar q_audit_topics no Supabase:', e);
+    }
+
+    // Se o nome do tema mudou, atualizar retroativamente as auditorias para manter o histórico alinhado
+    if (oldName && fields.name && oldName !== fields.name) {
+      try {
+        await supabase
+          .from('q_audits')
+          .update({ topic: fields.name })
+          .eq('topic', oldName);
+        
+        setAudits(prev => prev.map(a => a.topic === oldName ? { ...a, topic: fields.name } : a));
+      } catch (e) {
+        console.warn('Erro ao atualizar tópicos das auditorias existentes:', e);
+      }
+    }
+
+    setAuditTopics(prev => {
+      const updated = prev.map(t => t.id === id ? { ...t, ...fields } : t);
+      localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleDeleteAuditTopic = async (id, _topicName) => {
+    try {
+      await supabase
+        .from('q_audit_topics')
+        .delete()
+        .eq('id', id);
+    } catch (e) {
+      console.warn('Erro ao excluir q_audit_topics no Supabase:', e);
+    }
+
+    setAuditTopics(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // 7. Sincronização automática via Excel Upload
@@ -1484,6 +1620,8 @@ export default function App() {
                   }}
                   onRefresh={fetchData}
                   isLoading={isLoading}
+                  auditTopics={auditTopics}
+                  onOpenManageTopics={() => setShowAuditTopicsModal(true)}
                 />
               )}
 
@@ -1524,13 +1662,18 @@ export default function App() {
                 />
               )}
 
-              {/* Configuração de Checklist */}
+              {/* Configuração de Checklist e Temas */}
               {!isOperator && activeTab === 'config' && (
                 <ConfigChecklist 
                   checklistItems={checklistItems}
                   onAddChecklistItem={handleAddChecklistItem}
                   onDeleteChecklistItem={handleDeleteChecklistItem}
                   isLoading={isLoading}
+                  auditTopics={auditTopics}
+                  onAddAuditTopic={handleAddAuditTopic}
+                  onUpdateAuditTopic={handleUpdateAuditTopic}
+                  onDeleteAuditTopic={handleDeleteAuditTopic}
+                  audits={audits}
                 />
               )}
 
@@ -1572,6 +1715,23 @@ export default function App() {
           onClose={handleCloseAuditModal}
           onSave={handleSaveAudit}
           audit={selectedAuditForView}
+          auditTopics={auditTopics}
+          onAddTopic={handleAddAuditTopic}
+          onUpdateTopic={handleUpdateAuditTopic}
+          onDeleteTopic={handleDeleteAuditTopic}
+          audits={audits}
+        />
+      )}
+
+      {/* Modal: Gestão de Temas Principais da Auditoria */}
+      {showAuditTopicsModal && (
+        <AuditTopicsModal
+          topics={auditTopics}
+          audits={audits}
+          onClose={() => setShowAuditTopicsModal(false)}
+          onAddTopic={handleAddAuditTopic}
+          onUpdateTopic={handleUpdateAuditTopic}
+          onDeleteTopic={handleDeleteAuditTopic}
         />
       )}
 

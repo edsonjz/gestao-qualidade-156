@@ -165,6 +165,15 @@ CREATE TABLE IF NOT EXISTS public.q_audits (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- 8. Temas Principais da Auditoria Formativa
+CREATE TABLE IF NOT EXISTS public.q_audit_topics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    color TEXT DEFAULT 'blue',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- RLS & Políticas de Segurança
 ALTER TABLE public.q_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_cycles ENABLE ROW LEVEL SECURITY;
@@ -174,6 +183,7 @@ ALTER TABLE public.q_checklist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_operators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_monitorings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.q_audits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.q_audit_topics ENABLE ROW LEVEL SECURITY;
 
 -- Políticas Seguras: Apenas usuários autenticados têm acesso operacional
 CREATE POLICY "Leitura q_users para autenticados" ON public.q_users 
@@ -199,6 +209,7 @@ CREATE POLICY "Acesso q_checklist_items autenticados" ON public.q_checklist_item
 CREATE POLICY "Acesso q_operators autenticados" ON public.q_operators FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso q_monitorings autenticados" ON public.q_monitorings FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso q_audits autenticados" ON public.q_audits FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso q_audit_topics autenticados" ON public.q_audit_topics FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 INSERT INTO public.q_cycles (cycle_number, status, started_at) VALUES (1, 'Ativo', now()) ON CONFLICT DO NOTHING;
 

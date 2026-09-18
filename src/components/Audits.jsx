@@ -15,8 +15,10 @@ import {
   ChevronRight,
   Eye,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Layers
 } from 'lucide-react';
+import { getTopicBadgeClass } from './AuditTopicsModal';
 
 export default function Audits({ 
   audits = [], 
@@ -28,7 +30,9 @@ export default function Audits({
   onForceUnlock,
   onDeleteAudit,
   onRefresh,
-  isLoading = false 
+  isLoading = false,
+  auditTopics = [],
+  onOpenManageTopics
 }) {
   const [search, setSearch] = useState('');
   const [selectedSupervisor, setSelectedSupervisor] = useState('todos');
@@ -77,19 +81,14 @@ export default function Audits({
       });
   }, [operators, opSearch]);
 
-  const getTopicBadge = (topic) => {
-    switch (topic) {
-      case 'Atendimento e Postura':
-        return <span className="bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full">Postura & Empatia</span>;
-      case 'Procedimentos 156':
-        return <span className="bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 text-[10px] font-bold px-2 py-0.5 rounded-full">Regras 156</span>;
-      case 'Comunicação e Clareza':
-        return <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full">Comunicação</span>;
-      case 'Navegação em Sistemas':
-        return <span className="bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">Sistemas</span>;
-      default:
-        return <span className="bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300 text-[10px] font-bold px-2 py-0.5 rounded-full">{topic || 'Geral'}</span>;
-    }
+  const getTopicBadge = (topicName) => {
+    const found = auditTopics.find(t => t.name === topicName);
+    const colorClass = found ? getTopicBadgeClass(found.color) : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700';
+    return (
+      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${colorClass}`}>
+        {topicName || 'Geral'}
+      </span>
+    );
   };
 
   return (
@@ -115,6 +114,16 @@ export default function Audits({
         </div>
 
         <div className="flex items-center gap-3">
+          {onOpenManageTopics && (
+            <button
+              onClick={onOpenManageTopics}
+              className="p-2 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title="Gerenciar Temas Principais da Auditoria"
+            >
+              <Layers className="w-3.5 h-3.5 text-blue-500" />
+              Gerenciar Temas
+            </button>
+          )}
           <button
             onClick={onRefresh}
             className="p-2 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer"
@@ -200,12 +209,9 @@ export default function Audits({
           className="bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm text-zinc-800 dark:text-zinc-200 outline-none"
         >
           <option value="todos">Todos os Temas</option>
-          <option value="Atendimento e Postura">Atendimento e Postura</option>
-          <option value="Procedimentos 156">Procedimentos 156</option>
-          <option value="Comunicação e Clareza">Comunicação e Clareza</option>
-          <option value="Navegação em Sistemas">Navegação em Sistemas</option>
-          <option value="Acompanhamento e Reciclagem">Acompanhamento e Reciclagem</option>
-          <option value="Geral">Geral</option>
+          {auditTopics.map(t => (
+            <option key={t.id || t.name} value={t.name}>{t.name}</option>
+          ))}
         </select>
       </div>
 
