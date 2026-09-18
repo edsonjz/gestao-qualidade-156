@@ -1,3 +1,4 @@
+import React, { useState, useMemo } from 'react';
 import { Search, Filter, Eye, Edit, Trash2, ChevronLeft, ChevronRight, Calendar, User, Award, CheckCircle, AlertTriangle, X, UserCheck, MessageSquare } from 'lucide-react';
 
 export default function MonitoringsHistory({ 
@@ -8,7 +9,7 @@ export default function MonitoringsHistory({
   onEditMonitoring, 
   onDeleteMonitoring,
   onOpenFeedback,
-  activeProfile,
+  activeProfile = {},
   darkMode
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,10 +23,10 @@ export default function MonitoringsHistory({
   const [selectedMonitoringForDetails, setSelectedMonitoringForDetails] = useState(null);
 
   // Identificar escopo do perfil ativo
-  const isSupervisor = activeProfile.role === 'Supervisor';
-  const supervisorName = activeProfile.name ? activeProfile.name.replace(' (Supervisor)', '') : '';
+  const isSupervisor = (activeProfile?.role || '').toLowerCase() === 'supervisor';
+  const supervisorName = activeProfile?.name ? activeProfile.name.replace(' (Supervisor)', '') : '';
   const activeSupervisorId = useMemo(() => {
-    const s = supervisors.find(sup => sup.name === supervisorName || sup.id === activeProfile.id);
+    const s = supervisors.find(sup => sup.name === supervisorName || sup.id === activeProfile?.id);
     return s ? s.id : null;
   }, [supervisors, supervisorName, activeProfile]);
 
