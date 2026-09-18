@@ -227,13 +227,27 @@ export default function App() {
         .from('q_operators')
         .select('id, name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala, active, status_feedback, last_monitoring_at, last_feedback_at, assigned_monitor_id, assigned_monitor_name, locked_by_monitor_id, locked_by_monitor_name, locked_at')
         .order('name');
-      setOperators(operatorsData || []);
-
       // e. Monitorias
       const { data: monitoringsData } = await supabase
         .from('q_monitorings')
         .select('id, operator_id, monitor_id, cycle_id, score, monitoring_date, status, feedback_date, feedback_notes, checklist, is_ncg, q_monitors(name), q_operators(name, supervisor_name, schedule, allocation, skill, escala, matricula)')
         .order('monitoring_date', { ascending: false });
+
+      // Sincronizar status_feedback em tempo real caso haja monitorias aguardando feedback
+      const pendingOperatorIds = new Set(
+        (monitoringsData || [])
+          .filter(m => m.status === 'Aguardando Feedback')
+          .map(m => m.operator_id)
+      );
+
+      const reconciledOperators = (operatorsData || []).map(op => {
+        if (pendingOperatorIds.has(op.id) && op.status_feedback !== 'Aguardando Feedback') {
+          return { ...op, status_feedback: 'Aguardando Feedback' };
+        }
+        return op;
+      });
+
+      setOperators(reconciledOperators);
       setMonitorings(monitoringsData || []);
 
       // f. Auditorias de Desenvolvimento (sem nota)
@@ -1090,6 +1104,19 @@ export default function App() {
           .from('q_monitorings')
           .insert([dbPayload]);
         if (error) throw error;
+
+        // Atualizar status do operador para Aguardando Feedback e registrar última monitoria
+        try {
+          await supabase
+            .from('q_operators')
+            .update({
+              status_feedback: 'Aguardando Feedback',
+              last_monitoring_at: dbPayload.monitoring_date || new Date().toISOString()
+            })
+            .eq('id', dbPayload.operator_id);
+        } catch (opUpdErr) {
+          console.warn('Aviso ao atualizar operador para Aguardando Feedback:', opUpdErr);
+        }
       }
       
       // Liberar trava do operador no Supabase

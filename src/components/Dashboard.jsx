@@ -74,8 +74,11 @@ export default function Dashboard({
     const metaDia = monitors.reduce((sum, m) => sum + (Number(m.daily_target) || 17), 0) || (activeMonitorsCount * 17);
     const pctMeta = metaDia > 0 ? Math.round((monitoringsToday / metaDia) * 100) : 0;
 
-    const pendingFeedbacks = operators.filter(o => o.active && o.status_feedback === 'Aguardando Feedback').length;
-    const completedFeedbacks = monitorings.filter(m => m.status === 'Feedback Concluído').length;
+    // Feedbacks pendentes: busca tanto das monitorias quanto dos operadores no status 'Aguardando Feedback'
+    const pendingFromMonitorings = effectiveMonitorings.filter(m => m.status === 'Aguardando Feedback').length;
+    const pendingFromOperators = effectiveOperators.filter(o => o.active && o.status_feedback === 'Aguardando Feedback').length;
+    const pendingFeedbacks = Math.max(pendingFromMonitorings, pendingFromOperators);
+    const completedFeedbacks = effectiveMonitorings.filter(m => m.status === 'Feedback Concluído').length;
 
     // Operadores aguardando monitoria no ciclo ativo
     const opsMonitoredInActiveCycle = new Set(
