@@ -36,10 +36,46 @@ export default function Login({ onLoginSuccess }) {
         }
       }
 
-      const { data, error: authErr } = await supabase.auth.signInWithPassword({
+      let { data, error: authErr } = await supabase.auth.signInWithPassword({
         email: emailToAuth,
         password: password
       });
+
+      // Auto-provisionamento no primeiro acesso: se o operador usar a senha inicial padrão 123456
+      // e a conta ainda não existir no Supabase Auth, cria a conta na hora e realiza o login
+      if (authErr && loginMode === 'matricula' && password === '123456') {
+        try {
+          const matClean = matricula.trim().toLowerCase();
+          const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+            email: emailToAuth,
+            password: '123456',
+            options: {
+              data: {
+                matricula: matClean,
+                role: 'operador'
+              }
+            }
+          });
+
+          if (!signUpErr) {
+            if (signUpData?.session) {
+              onLoginSuccess(signUpData.session);
+              return;
+            }
+            // Tenta logar em seguida
+            const retryRes = await supabase.auth.signInWithPassword({
+              email: emailToAuth,
+              password: '123456'
+            });
+            if (retryRes?.data?.session) {
+              onLoginSuccess(retryRes.data.session);
+              return;
+            }
+          }
+        } catch (autoErr) {
+          console.warn('Auto-provisionamento no primeiro acesso:', autoErr);
+        }
+      }
 
       if (authErr) {
         const msg = authErr.message || '';
