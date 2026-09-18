@@ -41,7 +41,7 @@ export default function FeedbackModal({
       try {
         const { data, error } = await supabase
           .from('q_monitorings')
-          .select('id, score, monitoring_date, feedback_notes, feedback_parecer, status, q_monitors(name)')
+          .select('id, score, monitoring_date, feedback_notes, status, q_monitors(name)')
           .eq('operator_id', operator.id)
           .eq('status', 'Aguardando Feedback')
           .order('monitoring_date', { ascending: false })
@@ -50,7 +50,7 @@ export default function FeedbackModal({
 
         if (error) throw error;
         setMonitoring(data);
-        setParecer(data?.feedback_parecer || data?.feedback_notes || '');
+        setParecer(data?.feedback_notes || '');
       } catch (err) {
         console.error('Erro ao buscar monitoria pendente:', err);
       } finally {

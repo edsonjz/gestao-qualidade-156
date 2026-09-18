@@ -1357,7 +1357,10 @@ export default function App() {
                   activeCycle={activeCycle}
                   onStartMonitoring={handleStartMonitoring}
                   onStartAudit={handleStartAudit}
-                  onOpenFeedback={(op) => setSelectedOperatorForFeedback(op)}
+                  onOpenFeedback={(op, mon) => {
+                    const pendingMon = mon || monitorings.find(m => m.operator_id === op.id && m.status === 'Aguardando Feedback');
+                    setSelectedOperatorForFeedback({ ...op, targetMonitoring: pendingMon || null });
+                  }}
                   onForceUnlock={handleForceUnlockOperator}
                   currentMonitor={activeMonitorObj}
                   currentUser={currentUser}

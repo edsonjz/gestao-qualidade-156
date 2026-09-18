@@ -216,8 +216,11 @@ export default function SmartQueue({
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Sup: {op.supervisor_name}</p>
                   </div>
                   <button 
-                    onClick={() => onOpenFeedback(op)}
-                    className="flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-1 px-2.5 rounded-md transition-colors shadow-sm"
+                    onClick={() => {
+                      const pendingMon = monitorings.find(m => m.operator_id === op.id && m.status === 'Aguardando Feedback');
+                      onOpenFeedback(op, pendingMon);
+                    }}
+                    className="flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-1 px-2.5 rounded-md transition-colors shadow-sm cursor-pointer"
                   >
                     <Clock className="w-3.5 h-3.5" />
                     Feedback
