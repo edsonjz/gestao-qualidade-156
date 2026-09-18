@@ -1,5 +1,4 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Filter, Eye, Edit, Trash2, ChevronLeft, ChevronRight, Calendar, User, Award, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Search, Filter, Eye, Edit, Trash2, ChevronLeft, ChevronRight, Calendar, User, Award, CheckCircle, AlertTriangle, X, UserCheck, MessageSquare } from 'lucide-react';
 
 export default function MonitoringsHistory({ 
   operators = [], 
@@ -8,6 +7,7 @@ export default function MonitoringsHistory({
   supervisors = [], 
   onEditMonitoring, 
   onDeleteMonitoring,
+  onOpenFeedback,
   activeProfile,
   darkMode
 }) {
@@ -237,6 +237,19 @@ export default function MonitoringsHistory({
                         {h.feedback_notes || <span className="text-zinc-400 italic">Sem observações (Clique para ver detalhes)</span>}
                       </td>
                       <td className="px-5 py-3.5 text-center whitespace-nowrap space-x-1.5">
+                        {h.status === 'Aguardando Feedback' && onOpenFeedback && (
+                          <button
+                            onClick={() => {
+                              const op = operators.find(o => o.id === h.operator_id);
+                              if (op) onOpenFeedback(op, h);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded font-bold transition-all cursor-pointer text-[10px] shadow-sm"
+                            title="Realizar e Confirmar Parecer de Feedback"
+                          >
+                            <UserCheck className="w-3 h-3" />
+                            Feedback
+                          </button>
+                        )}
                         <button
                           onClick={() => setSelectedMonitoringForDetails(h)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded font-bold transition-all cursor-pointer text-[10px]"
@@ -318,6 +331,7 @@ export default function MonitoringsHistory({
         <MonitoringDetailsModal 
           monitoring={selectedMonitoringForDetails} 
           operators={operators} 
+          onOpenFeedback={onOpenFeedback}
           onClose={() => setSelectedMonitoringForDetails(null)} 
           darkMode={darkMode}
         />
@@ -327,7 +341,7 @@ export default function MonitoringsHistory({
 }
 
 // Sub-Componente Interno: Modal de Detalhes da Monitoria
-function MonitoringDetailsModal({ monitoring, operators = [], onClose, darkMode }) {
+function MonitoringDetailsModal({ monitoring, operators = [], onOpenFeedback, onClose, darkMode }) {
   const op = operators.find(o => o.id === monitoring.operator_id) || {};
   const checklist = monitoring.checklist || [];
 
@@ -393,14 +407,63 @@ function MonitoringDetailsModal({ monitoring, operators = [], onClose, darkMode 
           </div>
 
           {/* Observações / Feedback (Leitura Ampla e Dinâmica) */}
-          <div className="space-y-2 bg-[#fefcf8] dark:bg-zinc-900/10 p-5 rounded-xl border border-amber-100 dark:border-zinc-800/40">
-            <h4 className="text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-              <CheckCircle className="w-4 h-4 text-amber-600 dark:text-amber-500" />
-              Observações / Justificativas de Erro
-            </h4>
-            <div className="text-zinc-800 dark:text-zinc-200 text-sm leading-relaxed whitespace-pre-wrap font-medium">
-              {monitoring.feedback_notes || <span className="text-zinc-400 italic">Nenhuma observação ou feedback registrado para esta monitoria.</span>}
+          <div className="space-y-3 bg-[#fefcf8] dark:bg-zinc-900/10 p-5 rounded-xl border border-amber-100 dark:border-zinc-800/40">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-amber-600 dark:text-amber-500" />
+                Observações / Parecer do Feedback
+              </h4>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                monitoring.status === 'Feedback Concluído'
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400'
+              }`}>
+                {monitoring.status || 'Aguardando Feedback'}
+              </span>
             </div>
+
+            {monitoring.feedback_date && (
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex flex-wrap gap-2 pt-1 border-b border-amber-100/60 dark:border-zinc-800/40 pb-2">
+                <span>Feedback realizado em: <strong>{new Date(monitoring.feedback_date).toLocaleString('pt-BR')}</strong></span>
+                {monitoring.feedback_given_by_name && (
+                  <span>• Aplicado por: <strong>{monitoring.feedback_given_by_name}</strong></span>
+                )}
+              </div>
+            )}
+
+            <div className="text-zinc-800 dark:text-zinc-200 text-sm leading-relaxed whitespace-pre-wrap font-medium">
+              {monitoring.feedback_parecer ? (
+                <div className="space-y-2">
+                  <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 rounded-lg">
+                    <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider block mb-1">Parecer Conclusivo:</span>
+                    <p className="text-xs text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">{monitoring.feedback_parecer}</p>
+                  </div>
+                  {monitoring.feedback_notes && monitoring.feedback_notes !== monitoring.feedback_parecer && (
+                    <div>
+                      <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">Notas Adicionais / Plano de Ação:</span>
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{monitoring.feedback_notes}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                monitoring.feedback_notes || <span className="text-zinc-400 italic">Nenhuma observação ou feedback registrado para esta monitoria.</span>
+              )}
+            </div>
+
+            {monitoring.status === 'Aguardando Feedback' && onOpenFeedback && (
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenFeedback(op, monitoring);
+                  }}
+                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  Realizar / Confirmar Feedback com o Operador
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Critérios do Checklist Avaliados */}

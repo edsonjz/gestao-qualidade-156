@@ -8,6 +8,7 @@ import {
   KeyRound, 
   Mail, 
   User, 
+  UserCheck,
   CheckCircle2, 
   AlertCircle,
   Search,

@@ -1140,21 +1140,63 @@ export default function App() {
   // 9. Concluir feedback e liberar operador
   const handleSaveFeedback = async (payload) => {
     try {
-      const { error: monError } = await supabase
-        .from('q_monitorings')
-        .update({
-          status: 'Feedback Concluído',
-          feedback_date: payload.feedback_date,
-          feedback_notes: payload.feedback_notes
-        })
-        .eq('id', payload.monitoring_id);
-      
-      if (monError) throw monError;
+      const nowIso = payload.feedback_date || new Date().toISOString();
+      const updateMonitoringPayload = {
+        status: 'Feedback Concluído',
+        feedback_date: nowIso,
+        feedback_notes: payload.feedback_notes
+      };
+
+      // Tenta gravar campos estendidos na monitoria (se colunas existirem no DB)
+      try {
+        const { error: monError } = await supabase
+          .from('q_monitorings')
+          .update({
+            ...updateMonitoringPayload,
+            feedback_parecer: payload.feedback_parecer,
+            feedback_given_by_name: payload.feedback_given_by_name
+          })
+          .eq('id', payload.monitoring_id);
+
+        if (monError) {
+          // Fallback para colunas básicas se as novas colunas ainda não existirem
+          console.warn('Aviso colunas estendidas q_monitorings, aplicando fallback:', monError);
+          const { error: fbErr } = await supabase
+            .from('q_monitorings')
+            .update(updateMonitoringPayload)
+            .eq('id', payload.monitoring_id);
+          if (fbErr) throw fbErr;
+        }
+      } catch (colErr) {
+        console.warn('Fallback para update básico q_monitorings:', colErr);
+        await supabase
+          .from('q_monitorings')
+          .update(updateMonitoringPayload)
+          .eq('id', payload.monitoring_id);
+      }
+
+      // Desbloquear o operador para futuras monitorias (status_feedback: 'Liberado')
+      const targetOpId = payload.operator_id || selectedOperatorForFeedback?.id;
+      if (targetOpId) {
+        const { error: opError } = await supabase
+          .from('q_operators')
+          .update({
+            status_feedback: 'Liberado',
+            last_feedback_at: nowIso
+          })
+          .eq('id', targetOpId);
+
+        if (opError) {
+          console.warn('Aviso ao atualizar status_feedback no operador:', opError);
+        }
+      }
 
       setSelectedOperatorForFeedback(null);
-      fetchData();
+      await fetchData();
+      alert('Feedback e parecer confirmados com sucesso! Operador liberado para novas avaliações.');
     } catch (err) {
       console.error('Erro ao salvar feedback:', err);
+      alert('Erro ao confirmar feedback: ' + (err.message || ''));
     }
   };
 
@@ -1269,9 +1311,14 @@ export default function App() {
               {!isOperator && activeTab === 'dashboard' && (
                 <Dashboard 
                   operators={filteredOperators} 
+                  allOperators={operators}
                   monitorings={filteredMonitorings} 
+                  allMonitorings={monitorings}
+                  monitors={monitors}
+                  supervisors={supervisors}
                   activeCycle={activeCycle}
                   darkMode={darkMode} 
+                  userRole={userRole}
                 />
               )}
 
@@ -1328,6 +1375,7 @@ export default function App() {
                   supervisors={supervisors}
                   onEditMonitoring={handleEditMonitoringClick}
                   onDeleteMonitoring={handleDeleteMonitoring}
+                  onOpenFeedback={(op, mon) => setSelectedOperatorForFeedback({ ...op, targetMonitoring: mon })}
                   activeProfile={{ role: userRole }}
                   darkMode={darkMode}
                 />
@@ -1443,6 +1491,8 @@ export default function App() {
       {selectedOperatorForFeedback && (
         <FeedbackModal
           operator={selectedOperatorForFeedback}
+          currentUser={currentUser}
+          targetMonitoring={selectedOperatorForFeedback.targetMonitoring || null}
           onClose={() => setSelectedOperatorForFeedback(null)}
           onSave={handleSaveFeedback}
         />

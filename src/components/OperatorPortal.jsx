@@ -268,14 +268,20 @@ export default function OperatorPortal({
                             <>
                               <span>•</span>
                               <span>Feedback realizado em: <strong>{new Date(m.feedback_date).toLocaleDateString('pt-BR')}</strong></span>
+                              {m.feedback_given_by_name && (
+                                <span>por <strong>{m.feedback_given_by_name}</strong></span>
+                              )}
                             </>
                           )}
                         </div>
 
-                        {m.feedback_notes && (
-                          <p className="text-xs text-zinc-600 dark:text-zinc-300 italic pt-1 max-w-xl line-clamp-2">
-                            "{m.feedback_notes}"
-                          </p>
+                        {(m.feedback_parecer || m.feedback_notes) && (
+                          <div className="pt-1.5">
+                            <span className="text-[11px] font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider block">Parecer do Feedback:</span>
+                            <p className="text-xs text-zinc-700 dark:text-zinc-300 italic max-w-xl line-clamp-3">
+                              "{m.feedback_parecer || m.feedback_notes}"
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -438,19 +444,48 @@ export default function OperatorPortal({
                 </div>
               </div>
 
-              <div className="space-y-2 bg-blue-50/50 dark:bg-blue-950/20 p-4 rounded-xl border border-blue-200 dark:border-blue-900/30">
-                <div className="flex items-center gap-2 text-blue-900 dark:text-blue-300 font-bold">
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Observações & Apontamentos de Feedback</span>
-                </div>
-                <p className="text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                  {selectedMonitoring.feedback_notes || 'Nenhum apontamento adicional inserido para esta avaliação.'}
-                </p>
-                {selectedMonitoring.feedback_date && (
-                  <span className="text-[11px] text-zinc-500 block pt-2">
-                    Feedback aplicado em: {new Date(selectedMonitoring.feedback_date).toLocaleString('pt-BR')}
+              <div className="space-y-3 bg-blue-50/50 dark:bg-blue-950/20 p-5 rounded-xl border border-blue-200 dark:border-blue-900/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-blue-900 dark:text-blue-300 font-bold">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Parecer do Feedback & Orientações</span>
+                  </div>
+                  <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${
+                    selectedMonitoring.status === 'Feedback Concluído'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
+                  }`}>
+                    {selectedMonitoring.status || 'Aguardando Feedback'}
                   </span>
+                </div>
+
+                {selectedMonitoring.feedback_date && (
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex flex-wrap gap-2 pb-2 border-b border-blue-200/50 dark:border-blue-900/30">
+                    <span>Feedback aplicado em: <strong>{new Date(selectedMonitoring.feedback_date).toLocaleString('pt-BR')}</strong></span>
+                    {selectedMonitoring.feedback_given_by_name && (
+                      <span>• Avaliador(a): <strong>{selectedMonitoring.feedback_given_by_name}</strong></span>
+                    )}
+                  </div>
                 )}
+
+                <div className="text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap text-xs">
+                  {selectedMonitoring.feedback_parecer ? (
+                    <div className="space-y-2">
+                      <div className="p-3 bg-white dark:bg-zinc-900/50 rounded-lg border border-blue-200/60 dark:border-blue-900/40">
+                        <span className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wider block mb-1">Parecer Conclusivo:</span>
+                        <p className="whitespace-pre-wrap">{selectedMonitoring.feedback_parecer}</p>
+                      </div>
+                      {selectedMonitoring.feedback_notes && selectedMonitoring.feedback_notes !== selectedMonitoring.feedback_parecer && (
+                        <div className="p-3 bg-white dark:bg-zinc-900/50 rounded-lg border border-blue-200/60 dark:border-blue-900/40">
+                          <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">Observações & Plano de Ação:</span>
+                          <p className="whitespace-pre-wrap">{selectedMonitoring.feedback_notes}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    selectedMonitoring.feedback_notes || 'Nenhum apontamento adicional inserido para esta avaliação.'
+                  )}
+                </div>
               </div>
             </div>
 
