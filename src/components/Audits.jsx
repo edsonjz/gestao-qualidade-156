@@ -24,6 +24,7 @@ export default function Audits({
   currentUser, 
   onStartAudit, 
   onViewAudit,
+  onForceUnlock,
   onRefresh,
   isLoading = false 
 }) {
@@ -332,12 +333,18 @@ export default function Audits({
                 </div>
               ) : (
                 availableOperators.map(op => {
-                  // Verificação de Lock de Concorrência
+                  // Verificação de Lock de Concorrência (< 30 min)
                   const isLocked = Boolean(
                     op.locked_at && 
                     (new Date() - new Date(op.locked_at)) < 30 * 60 * 1000
                   );
-                  const isLockedByOther = isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id !== currentUser?.id;
+
+                  const isLockedByMe = isLocked && op.locked_by_monitor_id && (
+                    op.locked_by_monitor_id === currentUser?.id ||
+                    op.locked_by_monitor_id === currentUser?.email
+                  );
+
+                  const isLockedByOther = isLocked && op.locked_by_monitor_id && !isLockedByMe;
 
                   return (
                     <div 
@@ -359,19 +366,39 @@ export default function Audits({
                       </div>
 
                       {isLockedByOther ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                          <Lock className="w-3 h-3" />
-                          Em uso por {op.locked_by_monitor_name || 'outro'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                            <Lock className="w-3 h-3" />
+                            {op.locked_by_monitor_name ? `Em uso por ${op.locked_by_monitor_name}` : 'Em uso por outro usuário'}
+                          </span>
+                          {onForceUnlock && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Deseja forçar a liberação da trava do colaborador ${op.name}?`)) {
+                                  onForceUnlock(op.id);
+                                }
+                              }}
+                              title="Desbloquear se o usuário anterior abandonou a tela"
+                              className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline font-semibold cursor-pointer p-1"
+                            >
+                              Liberar
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <button
                           onClick={() => {
                             setShowOpSelector(false);
                             onStartAudit(op);
                           }}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-1 transition-colors cursor-pointer"
+                          className={`px-3 py-1.5 text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-1 transition-colors cursor-pointer ${
+                            isLockedByMe 
+                              ? 'bg-amber-600 hover:bg-amber-700' 
+                              : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
                         >
-                          Auditar
+                          {isLockedByMe ? 'Continuar' : 'Auditar'}
                           <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                       )}

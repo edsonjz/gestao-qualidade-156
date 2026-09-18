@@ -7,7 +7,8 @@ import {
   RefreshCw, 
   CheckCircle, 
   HelpCircle,
-  Lock
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { sortSmartQueue } from '../utils/distribution';
 
@@ -16,9 +17,11 @@ export default function SmartQueue({
   monitorings, 
   activeCycle, 
   onStartMonitoring, 
+  onStartAudit,
   onOpenFeedback,
   onForceUnlock,
   currentMonitor,
+  currentUser,
   isLoading 
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,8 +121,10 @@ export default function SmartQueue({
                     op={op} 
                     idx={idx + 1} 
                     onStartMonitoring={onStartMonitoring}
+                    onStartAudit={onStartAudit}
                     onForceUnlock={onForceUnlock}
                     currentMonitorId={currentMonitor?.id}
+                    currentUser={currentUser}
                   />
                 ))
               )
@@ -135,8 +140,10 @@ export default function SmartQueue({
                     op={op} 
                     idx={idx + 1} 
                     onStartMonitoring={onStartMonitoring} 
+                    onStartAudit={onStartAudit}
                     onForceUnlock={onForceUnlock}
                     currentMonitorId={currentMonitor?.id}
+                    currentUser={currentUser}
                   />
                 ))
               )
@@ -226,8 +233,8 @@ export default function SmartQueue({
   );
 }
 
-// Sub-componente de Linha da Fila com verificação de concorrência (Lock)
-function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitorId }) {
+// Sub-componente de Linha da Fila com verificação de concorrência (Lock Mútuo)
+function OperatorRow({ op, idx, onStartMonitoring, onStartAudit, onForceUnlock, currentMonitorId, currentUser }) {
   const isBlocked = op.status_feedback === 'Aguardando Feedback';
 
   // Verificação de Lock de Concorrência (< 30 minutos)
@@ -236,8 +243,13 @@ function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitor
     (new Date() - new Date(op.locked_at)) < 30 * 60 * 1000
   );
 
-  const isLockedByOther = isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id !== currentMonitorId;
-  const isLockedByMe = isLocked && op.locked_by_monitor_id && op.locked_by_monitor_id === currentMonitorId;
+  const isLockedByMe = isLocked && op.locked_by_monitor_id && (
+    op.locked_by_monitor_id === currentMonitorId ||
+    op.locked_by_monitor_id === currentUser?.id ||
+    op.locked_by_monitor_id === currentUser?.email
+  );
+
+  const isLockedByOther = isLocked && op.locked_by_monitor_id && !isLockedByMe;
 
   return (
     <div className={`flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-colors ${
@@ -264,11 +276,11 @@ function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitor
               {op.allocation}
             </span>
 
-            {/* Badge de Bloqueio Concorrente */}
+            {/* Badge de Bloqueio Concorrente Mútuo */}
             {isLockedByOther && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse">
                 <Lock className="w-3 h-3" />
-                Em avaliação por {op.locked_by_monitor_name || 'outro usuário'}
+                {op.locked_by_monitor_name ? `Em uso por ${op.locked_by_monitor_name}` : 'Em uso por outro usuário'}
               </span>
             )}
           </div>
@@ -303,7 +315,7 @@ function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitor
           <div className="flex items-center gap-1.5">
             <button 
               disabled 
-              title={`Bloqueado por ${op.locked_by_monitor_name || 'outro usuário'}`}
+              title={`Operador em procedimento com: ${op.locked_by_monitor_name || 'outro usuário'}`}
               className="flex items-center gap-1 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-bold py-1.5 px-3 rounded-lg cursor-not-allowed border border-amber-200 dark:border-amber-900"
             >
               <Lock className="w-3 h-3" />
@@ -313,7 +325,7 @@ function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitor
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`Deseja forçar a liberação da trava do operador ${op.name}?`)) {
+                  if (confirm(`Deseja forçar a liberação da trava do colaborador ${op.name}?`)) {
                     onForceUnlock(op.id);
                   }
                 }}
@@ -325,17 +337,30 @@ function OperatorRow({ op, idx, onStartMonitoring, onForceUnlock, currentMonitor
             )}
           </div>
         ) : (
-          <button 
-            onClick={() => onStartMonitoring(op)}
-            className={`flex items-center gap-1.5 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-colors shadow-sm ${
-              isLockedByMe 
-                ? 'bg-amber-600 hover:bg-amber-700' 
-                : 'bg-[#059669] hover:bg-[#047857]'
-            }`}
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            {isLockedByMe ? 'Continuar' : 'Avaliar'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button 
+              onClick={() => onStartMonitoring(op)}
+              title="Realizar Nova Monitoria de Qualidade (com Nota)"
+              className={`flex items-center gap-1.5 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-colors shadow-sm cursor-pointer ${
+                isLockedByMe 
+                  ? 'bg-amber-600 hover:bg-amber-700' 
+                  : 'bg-[#059669] hover:bg-[#047857]'
+              }`}
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              {isLockedByMe ? 'Continuar' : 'Avaliar'}
+            </button>
+            {onStartAudit && (
+              <button 
+                onClick={() => onStartAudit(op)}
+                title="Realizar Auditoria Formativa (Sem Nota)"
+                className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 text-xs font-bold py-1.5 px-2.5 rounded-lg transition-colors shadow-sm cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                Auditar
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

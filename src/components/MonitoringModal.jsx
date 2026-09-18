@@ -147,6 +147,17 @@ export default function MonitoringModal({
   };
 
   // Cores de fundo e texto dinâmicas para a nota
+  // Fechar ao pressionar a tecla Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const getScoreStyleClass = (val) => {
     if (val === 0) return 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950/30';
     if (val >= 90) return 'text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/30';
@@ -155,8 +166,18 @@ export default function MonitoringModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm no-print">
-      <div className="bg-white dark:bg-[#0c0c0f] w-full max-w-3xl rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+    <div 
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm no-print"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div 
+        className="bg-white dark:bg-[#0c0c0f] w-full max-w-3xl rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header Modal */}
         <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/10">
@@ -167,8 +188,10 @@ export default function MonitoringModal({
             </p>
           </div>
           <button 
+            type="button"
             onClick={onClose} 
-            className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors"
+            title="Fechar e liberar operador"
+            className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

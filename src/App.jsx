@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase, createEphemeralClient } from './supabaseClient';
 
 // Importar Componentes
@@ -254,13 +254,77 @@ export default function App() {
     }
   }, []);
 
+  // Referência para destrancar operador caso o usuário feche a aba ou navegador abruptamente
+  const activeLockedOperatorRef = useRef(null);
+  useEffect(() => {
+    activeLockedOperatorRef.current = selectedOperatorForMonitoring || selectedOperatorForAudit;
+  }, [selectedOperatorForMonitoring, selectedOperatorForAudit]);
+
+  // Listener para liberar trava se o usuário fechar a aba/janela ou recarregar
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const op = activeLockedOperatorRef.current;
+      if (!op) return;
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (supabaseUrl && supabaseKey) {
+          fetch(`${supabaseUrl}/rest/v1/q_operators?id=eq.${op.id}`, {
+            method: 'PATCH',
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({
+              locked_by_monitor_id: null,
+              locked_by_monitor_name: null,
+              locked_at: null
+            }),
+            keepalive: true
+          });
+        }
+      } catch (e) {
+        // ignore on close
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   useEffect(() => {
     if (session) {
       fetchStaticData();
       fetchData();
       fetchUsers();
 
-      // Sincronização periódica leve das travas concorrentes a cada 15 segundos
+      // 1. Canal Realtime Supabase para sincronização instantânea de travas entre navegadores
+      const realtimeLocksChannel = supabase
+        .channel('realtime_q_operators_locks')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'q_operators' },
+          (payload) => {
+            const updated = payload.new;
+            if (!updated) return;
+            setOperators(prev => prev.map(op => {
+              if (op.id !== updated.id) return op;
+              return {
+                ...op,
+                locked_by_monitor_id: updated.locked_by_monitor_id,
+                locked_by_monitor_name: updated.locked_by_monitor_name,
+                locked_at: updated.locked_at,
+                status_feedback: updated.status_feedback,
+                last_monitoring_at: updated.last_monitoring_at
+              };
+            }));
+          }
+        )
+        .subscribe();
+
+      // 2. Sincronização periódica leve como garantia de contingência a cada 15 segundos
       const lockInterval = setInterval(async () => {
         try {
           const { data: locks } = await supabase
@@ -292,7 +356,10 @@ export default function App() {
         }
       }, 15000);
 
-      return () => clearInterval(lockInterval);
+      return () => {
+        supabase.removeChannel(realtimeLocksChannel);
+        clearInterval(lockInterval);
+      };
     }
   }, [fetchStaticData, fetchData, fetchUsers, session]);
 
@@ -741,16 +808,26 @@ export default function App() {
         currentOp.locked_at && 
         (new Date() - new Date(currentOp.locked_at)) < 30 * 60 * 1000
       );
-      const activeUserId = currentUser?.id || activeMonitorObj?.id;
+      const activeUserId = currentUser?.email || currentUser?.id || activeMonitorObj?.id;
 
-      if (isLocked && currentOp.locked_by_monitor_id && currentOp.locked_by_monitor_id !== activeUserId) {
-        alert(`Atenção: O operador ${op.name} está em atendimento/avaliação por ${currentOp.locked_by_monitor_name || 'outro usuário'} neste momento.\n\nPara evitar duplicidade, selecione outro operador.`);
+      const isLockedByMe = isLocked && currentOp.locked_by_monitor_id && (
+        currentOp.locked_by_monitor_id === activeUserId ||
+        currentOp.locked_by_monitor_id === currentUser?.id ||
+        currentOp.locked_by_monitor_id === currentUser?.email ||
+        currentOp.locked_by_monitor_id === activeMonitorObj?.id
+      );
+
+      const isLockedByOther = isLocked && currentOp.locked_by_monitor_id && !isLockedByMe;
+
+      if (isLockedByOther) {
+        const procType = currentOp.locked_by_monitor_name?.includes('Auditoria') ? 'Auditoria' : 'Monitoria';
+        alert(`Atenção: O operador ${op.name} já está em processo de ${procType} por ${currentOp.locked_by_monitor_name || 'outro usuário'} neste momento.\n\nPara evitar conflito, selecione outro operador.`);
         fetchData();
         return;
       }
 
       // Registrar trava no Supabase
-      const lockedName = currentUser?.name || activeMonitorObj?.name || 'Monitora';
+      const lockedName = `${currentUser?.name || activeMonitorObj?.name || 'Avaliador'} (Monitoria)`;
       await supabase.from('q_operators').update({
         locked_by_monitor_id: activeUserId,
         locked_by_monitor_name: lockedName,
@@ -792,6 +869,8 @@ export default function App() {
           locked_by_monitor_name: null,
           locked_at: null
         } : o));
+
+        fetchData();
       } catch (e) {
         console.warn('Erro ao liberar trava do operador:', e);
       }
@@ -812,15 +891,25 @@ export default function App() {
         currentOp.locked_at && 
         (new Date() - new Date(currentOp.locked_at)) < 30 * 60 * 1000
       );
-      const activeUserId = currentUser?.id || activeMonitorObj?.id;
+      const activeUserId = currentUser?.email || currentUser?.id || activeMonitorObj?.id;
 
-      if (isLocked && currentOp.locked_by_monitor_id && currentOp.locked_by_monitor_id !== activeUserId) {
-        alert(`Atenção: O operador ${op.name} já está em processo de avaliação/auditoria por ${currentOp.locked_by_monitor_name || 'outro usuário'}.\n\nPara evitar conflito, selecione outro operador.`);
+      const isLockedByMe = isLocked && currentOp.locked_by_monitor_id && (
+        currentOp.locked_by_monitor_id === activeUserId ||
+        currentOp.locked_by_monitor_id === currentUser?.id ||
+        currentOp.locked_by_monitor_id === currentUser?.email ||
+        currentOp.locked_by_monitor_id === activeMonitorObj?.id
+      );
+
+      const isLockedByOther = isLocked && currentOp.locked_by_monitor_id && !isLockedByMe;
+
+      if (isLockedByOther) {
+        const procType = currentOp.locked_by_monitor_name?.includes('Monitoria') ? 'Monitoria' : 'Auditoria';
+        alert(`Atenção: O operador ${op.name} já está em processo de ${procType} por ${currentOp.locked_by_monitor_name || 'outro usuário'} neste momento.\n\nPara evitar conflito, selecione outro operador.`);
         fetchData();
         return;
       }
 
-      const lockedName = currentUser?.name || 'Avaliador';
+      const lockedName = `${currentUser?.name || 'Avaliador'} (Auditoria)`;
       await supabase.from('q_operators').update({
         locked_by_monitor_id: activeUserId,
         locked_by_monitor_name: lockedName,
@@ -861,6 +950,8 @@ export default function App() {
           locked_by_monitor_name: null,
           locked_at: null
         } : o));
+
+        fetchData();
       } catch (e) {
         console.warn('Erro ao liberar trava da auditoria:', e);
       }
@@ -918,6 +1009,8 @@ export default function App() {
         locked_by_monitor_name: null,
         locked_at: null
       } : o));
+
+      fetchData();
     } catch (e) {
       console.error('Erro ao liberar trava do operador:', e);
     }
@@ -1147,9 +1240,11 @@ export default function App() {
                   monitorings={filteredMonitorings}
                   activeCycle={activeCycle}
                   onStartMonitoring={handleStartMonitoring}
+                  onStartAudit={handleStartAudit}
                   onOpenFeedback={(op) => setSelectedOperatorForFeedback(op)}
                   onForceUnlock={handleForceUnlockOperator}
                   currentMonitor={activeMonitorObj}
+                  currentUser={currentUser}
                   isLoading={isLoading}
                 />
               )}
@@ -1204,6 +1299,7 @@ export default function App() {
                   supervisors={supervisors}
                   currentUser={currentUser}
                   onStartAudit={handleStartAudit}
+                  onForceUnlock={handleForceUnlockOperator}
                   onViewAudit={(audit) => {
                     const op = operators.find(o => o.id === audit.operator_id) || audit.q_operators || { id: audit.operator_id, name: audit.operator_name };
                     setSelectedOperatorForAudit(op);
