@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { 
   X, 
@@ -33,6 +33,15 @@ export default function PdiModal({
     if (initialPdi) return { ...initialPdi };
     return generatePdiProposal(operator, monitorings, audits);
   });
+
+  // Mantém pdiData sincronizado quando initialPdi for carregado ou atualizado
+  useEffect(() => {
+    if (initialPdi) {
+      setPdiData({ ...initialPdi });
+    } else if (operator) {
+      setPdiData(generatePdiProposal(operator, monitorings, audits));
+    }
+  }, [initialPdi, operator]);
 
   const [activeTab, setActiveTab] = useState('diagnostico'); // 'diagnostico' | 'treinamentos' | 'metas' | 'acompanhamento'
   const [isSaving, setIsSaving] = useState(false);

@@ -35,13 +35,17 @@ export default function PdiManagement({
       .filter(o => o.active)
       .map(op => {
         const analysis = analyzeOperatorData(op, monitorings, audits);
-        const existingPdi = pdis.find(p => p.operator_id === op.id);
+        const existingPdi = pdis.find(p => 
+          p.operator_id === op.id || 
+          p.operatorId === op.id || 
+          String(p.operator_id) === String(op.id)
+        );
 
         return {
           ...op,
           analysis,
           pdi: existingPdi || null,
-          hasActivePdi: existingPdi && existingPdi.status === 'Em Andamento',
+          hasActivePdi: existingPdi && (existingPdi.status === 'Em Andamento' || !existingPdi.status),
           isPdiCompleted: existingPdi && existingPdi.status === 'Concluído com Sucesso'
         };
       });

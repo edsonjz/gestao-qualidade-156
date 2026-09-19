@@ -44,9 +44,13 @@ export default function OperatorPortal({
   const [pwdSuccess, setPwdSuccess] = useState('');
 
   // Filtrar apenas as monitorias, auditorias e PDI deste operador
-  const myMonitorings = monitorings.filter(m => m.operator_id === operator?.id);
-  const myAudits = audits.filter(a => a.operator_id === operator?.id);
-  const myPdi = pdis.find(p => p.operator_id === operator?.id);
+  const myMonitorings = monitorings.filter(m => m.operator_id === operator?.id || String(m.operator_id) === String(operator?.id));
+  const myAudits = audits.filter(a => a.operator_id === operator?.id || String(a.operator_id) === String(operator?.id));
+  const myPdi = pdis.find(p => 
+    p.operator_id === operator?.id || 
+    p.operatorId === operator?.id || 
+    String(p.operator_id) === String(operator?.id)
+  );
 
   // KPIs
   const totalMonitorings = myMonitorings.length;

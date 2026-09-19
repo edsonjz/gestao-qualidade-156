@@ -7,7 +7,12 @@
   }
 }
 
-/* Custom Scrollbars */
+/* Custom Scrollbars (Cross-browser: Firefox, Chrome, Edge, Safari) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(161, 161, 170, 0.4) transparent;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

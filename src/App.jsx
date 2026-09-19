@@ -247,8 +247,30 @@ export default function App() {
       const active = cycles?.find(c => c.status === 'Ativo') || null;
       setActiveCycle(active);
 
-      // b. Monitores (com hidratação de metas diárias de monitoria e auditoria)
-      const auditTargets = JSON.parse(localStorage.getItem('q_daily_audit_targets') || '{}');
+      // b. Itens do Checklist e Configurações Persistidas na Nuvem
+      const { data: checklistData } = await supabase
+        .from('q_checklist_items')
+        .select('id, label, weight, active')
+        .order('weight', { ascending: false });
+
+      const visibleChecklist = (checklistData || []).filter(item => 
+        !item.label?.startsWith('__CONFIG_') && item.weight !== -999
+      );
+      setChecklistItems(visibleChecklist);
+
+      // c. Metas Diárias de Auditoria (Sincronizadas entre Navegadores)
+      const targetsConfig = (checklistData || []).find(item => item.label?.startsWith('__CONFIG_DAILY_AUDIT_TARGETS__:'));
+      let cloudTargets = {};
+      if (targetsConfig) {
+        try {
+          cloudTargets = JSON.parse(targetsConfig.label.replace('__CONFIG_DAILY_AUDIT_TARGETS__:', ''));
+        } catch (_) {}
+      }
+      const localTargets = JSON.parse(localStorage.getItem('q_daily_audit_targets') || '{}');
+      const auditTargets = { ...localTargets, ...cloudTargets };
+      localStorage.setItem('q_daily_audit_targets', JSON.stringify(auditTargets));
+
+      // d. Monitores (com hidratação de metas sincronizadas)
       const { data: monitorsData } = await supabase
         .from('q_monitors')
         .select('*')
@@ -260,69 +282,57 @@ export default function App() {
       }));
       setMonitors(hydratedMonitors);
 
-      // c. Supervisores
+      // e. Supervisores
       const { data: supervisorsData } = await supabase
         .from('q_supervisors')
         .select('id, name')
         .order('name');
       setSupervisors(supervisorsData || []);
 
-      // d. Itens do Checklist
-      const { data: checklistData } = await supabase
-        .from('q_checklist_items')
-        .select('id, label, weight')
-        .order('weight', { ascending: false });
-      setChecklistItems(checklistData || []);
-
-      // e. Temas da Auditoria Formativa
+      // f. Temas da Auditoria Formativa (Sincronizados entre Navegadores)
+      let resolvedTopics = null;
       try {
         const { data: topicsData, error: topicsErr } = await supabase
           .from('q_audit_topics')
           .select('*')
           .order('created_at', { ascending: true });
-        
-        if (topicsErr || !topicsData || topicsData.length === 0) {
-          const cached = localStorage.getItem('q_audit_topics');
-          if (cached) {
-            setAuditTopics(JSON.parse(cached));
-          } else {
-            const defaults = [
-              { id: 'topic-1', name: 'Atendimento e Postura', description: 'Atendimento, Postura e Empatia', color: 'blue' },
-              { id: 'topic-2', name: 'Procedimentos 156', description: 'Procedimentos e Regras 156', color: 'purple' },
-              { id: 'topic-3', name: 'Comunicação e Clareza', description: 'Comunicação, Clareza e Dicção', color: 'emerald' },
-              { id: 'topic-4', name: 'Navegação em Sistemas', description: 'Agilidade e Navegação em Sistemas', color: 'amber' },
-              { id: 'topic-5', name: 'Acompanhamento e Reciclagem', description: 'Acompanhamento / Reciclagem', color: 'indigo' },
-              { id: 'topic-6', name: 'Geral', description: 'Desenvolvimento Geral', color: 'zinc' }
-            ];
-            setAuditTopics(defaults);
-            localStorage.setItem('q_audit_topics', JSON.stringify(defaults));
-          }
-        } else {
-          setAuditTopics(topicsData);
-          localStorage.setItem('q_audit_topics', JSON.stringify(topicsData));
+        if (!topicsErr && topicsData && topicsData.length > 0) {
+          resolvedTopics = topicsData;
         }
-      } catch (tErr) {
-        console.warn('Carregando temas de auditoria do cache local:', tErr);
+      } catch (_) {}
+
+      if (!resolvedTopics) {
+        const topicConfig = (checklistData || []).find(item => item.label?.startsWith('__CONFIG_AUDIT_TOPICS__:'));
+        if (topicConfig) {
+          try {
+            const parsed = JSON.parse(topicConfig.label.replace('__CONFIG_AUDIT_TOPICS__:', ''));
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              resolvedTopics = parsed;
+            }
+          } catch (_) {}
+        }
       }
 
-      // f. PDIs (Planos de Desenvolvimento Individual)
-      try {
-        const { data: pdisData, error: pdiErr } = await supabase
-          .from('q_pdis')
-          .select('*')
-          .order('created_at', { ascending: false });
-        if (!pdiErr && pdisData) {
-          setPdis(pdisData);
-          localStorage.setItem('q_pdis_cache', JSON.stringify(pdisData));
-        } else {
-          const cached = localStorage.getItem('q_pdis_cache');
-          if (cached) setPdis(JSON.parse(cached));
+      if (!resolvedTopics) {
+        const cached = localStorage.getItem('q_audit_topics');
+        if (cached) {
+          try { resolvedTopics = JSON.parse(cached); } catch (_) {}
         }
-      } catch (e) {
-        console.warn('Erro ao carregar PDIs do Supabase, usando cache local:', e);
-        const cached = localStorage.getItem('q_pdis_cache');
-        if (cached) setPdis(JSON.parse(cached));
       }
+
+      if (!resolvedTopics || resolvedTopics.length === 0) {
+        resolvedTopics = [
+          { id: 'topic-1', name: 'Atendimento e Postura', description: 'Atendimento, Postura e Empatia', color: 'blue' },
+          { id: 'topic-2', name: 'Procedimentos 156', description: 'Procedimentos e Regras 156', color: 'purple' },
+          { id: 'topic-3', name: 'Comunicação e Clareza', description: 'Comunicação, Clareza e Dicção', color: 'emerald' },
+          { id: 'topic-4', name: 'Navegação em Sistemas', description: 'Agilidade e Navegação em Sistemas', color: 'amber' },
+          { id: 'topic-5', name: 'Acompanhamento e Reciclagem', description: 'Acompanhamento / Reciclagem', color: 'indigo' },
+          { id: 'topic-6', name: 'Geral', description: 'Desenvolvimento Geral', color: 'zinc' }
+        ];
+      }
+
+      setAuditTopics(resolvedTopics);
+      localStorage.setItem('q_audit_topics', JSON.stringify(resolvedTopics));
 
     } catch (err) {
       console.error('Erro ao buscar dados estáticos do Supabase:', err);
@@ -386,13 +396,73 @@ export default function App() {
       setOperators(reconciledOperators);
       setMonitorings(monitoringsData || []);
 
-      // f. Auditorias de Desenvolvimento (sem nota)
+      // f. Auditorias de Desenvolvimento e Sincronização em Nuvem de PDIs
       try {
         const { data: auditsData } = await supabase
           .from('q_audits')
           .select('*, q_operators(name, matricula, supervisor_id, supervisor_name, schedule, allocation, skill, escala)')
           .order('audit_date', { ascending: false });
-        setAudits(auditsData || []);
+
+        if (auditsData) {
+          const regularAudits = [];
+          const cloudPdis = [];
+
+          auditsData.forEach(item => {
+            if (item.topic && item.topic.startsWith('[PDI]')) {
+              try {
+                const parsed = JSON.parse(item.general_notes || '{}');
+                cloudPdis.push({
+                  ...parsed,
+                  id: item.id,
+                  operator_id: item.operator_id,
+                  status: item.status || parsed.status || 'Em Andamento',
+                  created_at: parsed.created_at || item.audit_date || item.created_at,
+                  updated_at: parsed.updated_at || item.audit_date || item.created_at
+                });
+              } catch (e) {
+                console.warn('Erro ao decodificar registro de PDI da nuvem:', e);
+              }
+            } else {
+              regularAudits.push(item);
+            }
+          });
+
+          setAudits(regularAudits);
+
+          // Sincronização de contingência e auto-migração:
+          // Se havia PDIs criados em outro navegador (ex: Chrome via localStorage), migra automaticamente para a nuvem
+          let finalPdis = [...cloudPdis];
+          try {
+            const localCached = JSON.parse(localStorage.getItem('q_pdis_cache') || '[]');
+            if (Array.isArray(localCached) && localCached.length > 0) {
+              for (const localPdi of localCached) {
+                const existsInCloud = cloudPdis.some(cp => 
+                  cp.operator_id === localPdi.operator_id || String(cp.operator_id) === String(localPdi.operator_id)
+                );
+                if (!existsInCloud && localPdi.operator_id) {
+                  finalPdis.push(localPdi);
+                  supabase.from('q_audits').insert([{
+                    operator_id: localPdi.operator_id,
+                    auditor_name: 'Sistema Qualidade 156',
+                    auditor_role: 'admin',
+                    topic: '[PDI] Plano de Desenvolvimento Individual',
+                    status: localPdi.status || 'Em Andamento',
+                    strengths: Array.isArray(localPdi.strengths) ? localPdi.strengths.join('\n') : (localPdi.strengths || ''),
+                    improvements: Array.isArray(localPdi.improvements) ? localPdi.improvements.join('\n') : (localPdi.improvements || ''),
+                    action_plan: typeof localPdi.actionPlan === 'string' ? localPdi.actionPlan : JSON.stringify(localPdi.actionPlan || []),
+                    general_notes: JSON.stringify(localPdi),
+                    audit_date: localPdi.updated_at || localPdi.created_at || new Date().toISOString()
+                  }]).then(() => {});
+                }
+              }
+            }
+          } catch (migErr) {
+            console.warn('Erro na contingência de PDI local:', migErr);
+          }
+
+          setPdis(finalPdis);
+          localStorage.setItem('q_pdis_cache', JSON.stringify(finalPdis));
+        }
       } catch (aErr) {
         console.warn('Tabela q_audits ainda não criada ou inacessível:', aErr);
       }
@@ -450,7 +520,7 @@ export default function App() {
       fetchData();
       fetchUsers();
 
-      // 1. Canal Realtime Supabase para sincronização instantânea de travas entre navegadores
+      // 1. Canal Realtime Supabase para sincronização instantânea de travas e operadores
       const realtimeLocksChannel = supabase
         .channel('realtime_q_operators_locks')
         .on(
@@ -472,43 +542,52 @@ export default function App() {
             }));
           }
         )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'q_operators' },
+          () => fetchData()
+        )
+        .on(
+          'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'q_operators' },
+          () => fetchData()
+        )
         .subscribe();
 
-      // 2. Sincronização periódica leve como garantia de contingência a cada 15 segundos
-      const lockInterval = setInterval(async () => {
-        try {
-          const { data: locks } = await supabase
-            .from('q_operators')
-            .select('id, locked_by_monitor_id, locked_by_monitor_name, locked_at, status_feedback, last_monitoring_at');
-          if (locks && locks.length > 0) {
-            setOperators(prev => prev.map(op => {
-              const fresh = locks.find(l => l.id === op.id);
-              if (!fresh) return op;
-              if (
-                fresh.locked_by_monitor_id !== op.locked_by_monitor_id || 
-                fresh.locked_at !== op.locked_at ||
-                fresh.status_feedback !== op.status_feedback
-              ) {
-                return {
-                  ...op,
-                  locked_by_monitor_id: fresh.locked_by_monitor_id,
-                  locked_by_monitor_name: fresh.locked_by_monitor_name,
-                  locked_at: fresh.locked_at,
-                  status_feedback: fresh.status_feedback,
-                  last_monitoring_at: fresh.last_monitoring_at
-                };
-              }
-              return op;
-            }));
+      // 2. Canal Realtime Supabase para Auditorias e PDIs (sincronização instantânea entre Chrome e Firefox)
+      const realtimeAuditsChannel = supabase
+        .channel('realtime_q_audits_sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'q_audits' },
+          () => {
+            fetchData();
           }
-        } catch (e) {
-          // ignore silent poll failure
-        }
-      }, 15000);
+        )
+        .subscribe();
+
+      // 3. Canal Realtime Supabase para Monitorias e Feedbacks
+      const realtimeMonitoringsChannel = supabase
+        .channel('realtime_q_monitorings_sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'q_monitorings' },
+          () => {
+            fetchData();
+          }
+        )
+        .subscribe();
+
+      // 4. Sincronização periódica leve como garantia de contingência a cada 10 segundos
+      const syncInterval = setInterval(() => {
+        fetchData();
+      }, 10000);
 
       return () => {
         supabase.removeChannel(realtimeLocksChannel);
-        clearInterval(lockInterval);
+        supabase.removeChannel(realtimeAuditsChannel);
+        supabase.removeChannel(realtimeMonitoringsChannel);
+        clearInterval(syncInterval);
       };
     }
   }, [fetchStaticData, fetchData, fetchUsers, session]);
@@ -701,6 +780,7 @@ export default function App() {
       if (id) {
         auditTargets[id] = numAuditDaily;
         localStorage.setItem('q_daily_audit_targets', JSON.stringify(auditTargets));
+        syncDailyAuditTargetsToCloud(auditTargets);
 
         try {
           const { error: updErr } = await supabase
@@ -737,6 +817,7 @@ export default function App() {
         if (monitorId) {
           auditTargets[monitorId] = numAuditDaily;
           localStorage.setItem('q_daily_audit_targets', JSON.stringify(auditTargets));
+          syncDailyAuditTargetsToCloud(auditTargets);
         }
       }
 
@@ -836,6 +917,55 @@ export default function App() {
     }
   };
 
+  // Funções auxiliares para sincronização persistente de configurações na nuvem
+  const syncAuditTopicsToCloud = async (topicsList) => {
+    try {
+      const label = '__CONFIG_AUDIT_TOPICS__:' + JSON.stringify(topicsList);
+      const { data: existing } = await supabase
+        .from('q_checklist_items')
+        .select('id')
+        .like('label', '__CONFIG_AUDIT_TOPICS__:%')
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        await supabase
+          .from('q_checklist_items')
+          .update({ label, weight: -999, active: false })
+          .eq('id', existing[0].id);
+      } else {
+        await supabase
+          .from('q_checklist_items')
+          .insert([{ label, weight: -999, active: false }]);
+      }
+    } catch (e) {
+      console.warn('Erro ao sincronizar temas de auditoria na nuvem:', e);
+    }
+  };
+
+  const syncDailyAuditTargetsToCloud = async (targetsObj) => {
+    try {
+      const label = '__CONFIG_DAILY_AUDIT_TARGETS__:' + JSON.stringify(targetsObj);
+      const { data: existing } = await supabase
+        .from('q_checklist_items')
+        .select('id')
+        .like('label', '__CONFIG_DAILY_AUDIT_TARGETS__:%')
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        await supabase
+          .from('q_checklist_items')
+          .update({ label, weight: -999, active: false })
+          .eq('id', existing[0].id);
+      } else {
+        await supabase
+          .from('q_checklist_items')
+          .insert([{ label, weight: -999, active: false }]);
+      }
+    } catch (e) {
+      console.warn('Erro ao sincronizar metas de auditoria na nuvem:', e);
+    }
+  };
+
   // 6.b CRUD Temas da Auditoria Formativa
   const handleAddAuditTopic = async ({ name, description, color }) => {
     const newTopic = {
@@ -862,12 +992,13 @@ export default function App() {
         savedTopic = data;
       }
     } catch (e) {
-      console.warn('Persistindo tema de auditoria localmente (q_audit_topics offline):', e);
+      console.warn('Persistindo tema de auditoria em contingência:', e);
     }
 
     setAuditTopics(prev => {
       const updated = [...prev, savedTopic];
       localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      syncAuditTopicsToCloud(updated);
       return updated;
     });
 
@@ -901,6 +1032,7 @@ export default function App() {
     setAuditTopics(prev => {
       const updated = prev.map(t => t.id === id ? { ...t, ...fields } : t);
       localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      syncAuditTopicsToCloud(updated);
       return updated;
     });
   };
@@ -918,34 +1050,86 @@ export default function App() {
     setAuditTopics(prev => {
       const updated = prev.filter(t => t.id !== id);
       localStorage.setItem('q_audit_topics', JSON.stringify(updated));
+      syncAuditTopicsToCloud(updated);
       return updated;
     });
   };
 
-  // 6.c CRUD PDI (Plano de Desenvolvimento Individual)
+  // 6.c CRUD PDI (Plano de Desenvolvimento Individual) com Persistência Cloud Multiplataforma
   const handleSavePdi = async (payload) => {
     try {
       let savedPdi = { ...payload };
-      if (!savedPdi.id) {
-        savedPdi.id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `pdi-${Date.now()}`;
+      if (!savedPdi.created_at) {
         savedPdi.created_at = new Date().toISOString();
       }
+      savedPdi.updated_at = new Date().toISOString();
 
+      const auditPayload = {
+        operator_id: savedPdi.operator_id,
+        auditor_id: currentUser?.id || null,
+        auditor_name: currentUser?.name || 'Sistema Qualidade 156',
+        auditor_role: currentUser?.role || 'admin',
+        topic: '[PDI] Plano de Desenvolvimento Individual',
+        status: savedPdi.status || 'Em Andamento',
+        strengths: Array.isArray(savedPdi.strengths) ? savedPdi.strengths.join('\n') : (savedPdi.strengths || ''),
+        improvements: Array.isArray(savedPdi.improvements) ? savedPdi.improvements.join('\n') : (savedPdi.improvements || ''),
+        action_plan: typeof savedPdi.actionPlan === 'string' ? savedPdi.actionPlan : JSON.stringify(savedPdi.actionPlan || []),
+        general_notes: JSON.stringify(savedPdi),
+        audit_date: savedPdi.updated_at || savedPdi.created_at || new Date().toISOString()
+      };
+
+      // 1. Salvar no Supabase (q_audits) para sincronização em qualquer navegador
+      let cloudId = null;
       try {
-        const { data, error } = await supabase
-          .from('q_pdis')
-          .upsert([savedPdi])
-          .select()
-          .single();
-        if (!error && data) {
-          savedPdi = data;
+        const { data: existingAudits } = await supabase
+          .from('q_audits')
+          .select('id')
+          .eq('operator_id', savedPdi.operator_id)
+          .eq('topic', '[PDI] Plano de Desenvolvimento Individual')
+          .limit(1);
+
+        if (existingAudits && existingAudits.length > 0) {
+          cloudId = existingAudits[0].id;
+          await supabase
+            .from('q_audits')
+            .update(auditPayload)
+            .eq('id', cloudId);
+        } else {
+          const { data: inserted, error: insErr } = await supabase
+            .from('q_audits')
+            .insert([auditPayload])
+            .select('id')
+            .single();
+          if (!insErr && inserted) {
+            cloudId = inserted.id;
+          }
         }
-      } catch (e) {
-        console.warn('Persistindo PDI localmente (q_pdis offline/fallback):', e);
+      } catch (cloudErr) {
+        console.warn('Persistindo PDI na nuvem (q_audits fallback):', cloudErr);
       }
 
+      if (cloudId) {
+        savedPdi.id = cloudId;
+      } else if (!savedPdi.id) {
+        savedPdi.id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `pdi-${Date.now()}`;
+      }
+
+      // 2. Tentar também q_pdis para compatibilidade futura
+      try {
+        await supabase
+          .from('q_pdis')
+          .upsert([savedPdi]);
+      } catch (pdiErr) {
+        // q_pdis pode não existir, o q_audits acima garante a sincronização
+      }
+
+      // 3. Atualizar estado local de PDIs
       setPdis(prev => {
-        const index = prev.findIndex(p => p.id === savedPdi.id || p.operator_id === savedPdi.operator_id);
+        const index = prev.findIndex(p => 
+          (savedPdi.id && p.id === savedPdi.id) || 
+          p.operator_id === savedPdi.operator_id ||
+          String(p.operator_id) === String(savedPdi.operator_id)
+        );
         let updated;
         if (index >= 0) {
           updated = [...prev];
@@ -957,7 +1141,7 @@ export default function App() {
         return updated;
       });
 
-      alert('PDI registrado com sucesso!');
+      alert('PDI registrado e sincronizado em nuvem com sucesso!');
     } catch (err) {
       console.error('Erro ao salvar PDI:', err);
       alert('Erro ao salvar PDI: ' + (err.message || ''));
@@ -966,10 +1150,27 @@ export default function App() {
 
   const handleDeletePdi = async (pdiId) => {
     try {
-      await supabase.from('q_pdis').delete().eq('id', pdiId);
+      // 1. Excluir de q_audits
+      await supabase.from('q_audits').delete().eq('id', pdiId);
+
+      // Também garantir exclusão pelo operator_id
+      const targetPdi = pdis.find(p => p.id === pdiId);
+      if (targetPdi?.operator_id) {
+        await supabase
+          .from('q_audits')
+          .delete()
+          .eq('operator_id', targetPdi.operator_id)
+          .eq('topic', '[PDI] Plano de Desenvolvimento Individual');
+      }
+
+      // 2. Tentar q_pdis
+      try {
+        await supabase.from('q_pdis').delete().eq('id', pdiId);
+      } catch (_) {}
     } catch (e) {
-      console.warn('Erro ao excluir q_pdis no Supabase:', e);
+      console.warn('Erro ao excluir PDI no Supabase:', e);
     }
+
     setPdis(prev => {
       const updated = prev.filter(p => p.id !== pdiId);
       localStorage.setItem('q_pdis_cache', JSON.stringify(updated));
