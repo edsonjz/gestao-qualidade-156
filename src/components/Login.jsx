@@ -46,13 +46,35 @@ export default function Login({ onLoginSuccess }) {
       if (authErr && loginMode === 'matricula' && password === '123456') {
         try {
           const matClean = matricula.trim().toLowerCase();
+          
+          // Tenta localizar o operador real para já preencher o nome completo
+          let opRealName = `Operador (${matClean})`;
+          let opSupervisorName = 'Geral';
+          let opId = null;
+          try {
+            const { data: foundOps } = await supabase
+              .from('q_operators')
+              .select('id, name, supervisor_name, matricula');
+            const match = foundOps?.find(o => o.matricula && String(o.matricula).trim().toLowerCase() === matClean);
+            if (match) {
+              opRealName = match.name;
+              opSupervisorName = match.supervisor_name || 'Geral';
+              opId = match.id;
+            }
+          } catch (findErr) {
+            console.warn('Busca antecipada de operador no login:', findErr);
+          }
+
           const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
             email: emailToAuth,
             password: '123456',
             options: {
               data: {
+                name: opRealName,
                 matricula: matClean,
-                role: 'operador'
+                role: 'operador',
+                operator_id: opId,
+                supervisor_name: opSupervisorName
               }
             }
           });

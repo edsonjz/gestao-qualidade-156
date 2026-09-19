@@ -135,29 +135,76 @@ export default function App() {
         .maybeSingle();
 
       const isOpEmail = email.startsWith('op_');
-      const extractedMatricula = currentSession.user.user_metadata?.matricula || (isOpEmail ? email.replace(/^op_/, '').split('@')[0] : null);
+      const extractedMatricula = currentSession.user.user_metadata?.matricula || 
+        (isOpEmail ? email.replace(/^op_/, '').split('@')[0] : null);
 
-      if (data && data.active !== false) {
-        setCurrentUser({ ...data, matricula: data.matricula || extractedMatricula });
-        setUserRole(data.role || (isOpEmail ? 'operador' : 'monitor'));
-        if (data.role === 'operador' || isOpEmail) {
-          setActiveTab('portal');
+      let resolvedRole = data?.role || (isOpEmail ? 'operador' : (currentSession.user.user_metadata?.role || 'monitor'));
+      let profile = data && data.active !== false ? { ...data } : {
+        id: currentSession.user.id,
+        email: email,
+        name: currentSession.user.user_metadata?.name || (isOpEmail ? `Operador (${extractedMatricula})` : email.split('@')[0]),
+        role: resolvedRole
+      };
+
+      profile.matricula = profile.matricula || extractedMatricula;
+
+      // Hidratação profunda se for perfil Operador: buscar dados reais em q_operators
+      if (resolvedRole === 'operador' || isOpEmail) {
+        try {
+          const matClean = profile.matricula ? String(profile.matricula).trim().toLowerCase() : '';
+          const { data: opMatches } = await supabase
+            .from('q_operators')
+            .select('id, name, matricula, supervisor_id, supervisor_name, schedule, skill, allocation, escala');
+
+          if (opMatches && opMatches.length > 0) {
+            const foundOp = 
+              (profile.operator_id && opMatches.find(o => o.id === profile.operator_id)) ||
+              (matClean && opMatches.find(o => o.matricula && String(o.matricula).trim().toLowerCase() === matClean)) ||
+              (profile.name && opMatches.find(o => o.name && o.name.toLowerCase() === profile.name.toLowerCase())) ||
+              null;
+
+            if (foundOp) {
+              profile.operator_id = foundOp.id;
+              profile.name = foundOp.name;
+              profile.matricula = foundOp.matricula || profile.matricula;
+              profile.supervisor_id = foundOp.supervisor_id;
+              profile.supervisor_name = foundOp.supervisor_name;
+              profile.operator_data = foundOp;
+            }
+          }
+        } catch (opHydrateErr) {
+          console.warn('Não foi possível hidratar operador antecipadamente:', opHydrateErr);
         }
-      } else {
-        // Fallback para role nos metadados ou operador/monitor
-        const roleFromMeta = isOpEmail ? 'operador' : (currentSession.user.user_metadata?.role || 'monitor');
-        const profile = {
-          id: currentSession.user.id,
-          email: email,
-          name: currentSession.user.user_metadata?.name || (isOpEmail ? `Operador (${extractedMatricula})` : email.split('@')[0]),
-          role: roleFromMeta,
-          matricula: extractedMatricula
-        };
-        setCurrentUser(profile);
-        setUserRole(roleFromMeta);
-        if (roleFromMeta === 'operador') {
-          setActiveTab('portal');
+      }
+
+      // Hidratação profunda se for perfil Supervisor: garantir que supervisor_id esteja preenchido
+      if (resolvedRole === 'supervisor') {
+        try {
+          const { data: supMatches } = await supabase
+            .from('q_supervisors')
+            .select('id, name');
+
+          if (supMatches && supMatches.length > 0) {
+            const cleanSupName = (profile.name || '').replace(/\s*\(supervisor\)/i, '').trim().toLowerCase();
+            const foundSup = 
+              (profile.supervisor_id && supMatches.find(s => s.id === profile.supervisor_id)) ||
+              (cleanSupName && supMatches.find(s => s.name && s.name.trim().toLowerCase() === cleanSupName)) ||
+              null;
+
+            if (foundSup) {
+              profile.supervisor_id = foundSup.id;
+              profile.name = foundSup.name;
+            }
+          }
+        } catch (supHydrateErr) {
+          console.warn('Não foi possível hidratar supervisor antecipadamente:', supHydrateErr);
         }
+      }
+
+      setCurrentUser(profile);
+      setUserRole(resolvedRole);
+      if (resolvedRole === 'operador') {
+        setActiveTab('portal');
       }
     } catch (err) {
       console.warn('Erro ao carregar perfil do usuário:', err);
@@ -1522,22 +1569,71 @@ export default function App() {
   const isMonitor = userRole === 'monitor';
   const isOperator = userRole === 'operador';
 
-  // Identificar operador logado (se for perfil operador)
+  // Resolução exata do supervisor logado (ID e nome)
+  const activeSupervisorRecord = useMemo(() => {
+    if (!isSupervisor || !currentUser) return null;
+    const cleanUserName = (currentUser.name || '').replace(/\s*\(supervisor\)/i, '').trim().toLowerCase();
+    return supervisors.find(s => 
+      (currentUser.supervisor_id && s.id === currentUser.supervisor_id) ||
+      (currentUser.id && s.id === currentUser.id) ||
+      (s.name && cleanUserName && s.name.trim().toLowerCase() === cleanUserName) ||
+      (s.name && cleanUserName && (s.name.toLowerCase().includes(cleanUserName) || cleanUserName.includes(s.name.toLowerCase())))
+    ) || null;
+  }, [isSupervisor, currentUser, supervisors]);
+
+  const effectiveSupervisorId = activeSupervisorRecord?.id || currentUser?.supervisor_id || null;
+  const effectiveSupervisorName = activeSupervisorRecord?.name || currentUser?.name?.replace(/\s*\(supervisor\)/i, '') || '';
+
+  // Identificar operador logado de forma abrangente e infalível
   const loggedOperator = useMemo(() => {
     if (!isOperator) return null;
-    return operators.find(o => o.id === currentUser?.operator_id) ||
-           operators.find(o => o.name.toLowerCase() === currentUser?.name?.toLowerCase()) ||
-           null;
-  }, [isOperator, operators, currentUser]);
+
+    const currentMatricula = currentUser?.matricula ? String(currentUser.matricula).trim().toLowerCase() : '';
+    const currentEmail = currentUser?.email ? currentUser.email.toLowerCase().trim() : '';
+    const currentName = currentUser?.name ? currentUser.name.toLowerCase().trim() : '';
+
+    const found = 
+      // 1. Por operator_id explicitamente gravado
+      (currentUser?.operator_id && operators.find(o => o.id === currentUser.operator_id)) ||
+      // 2. Por matrícula (removendo prefixos e normalizando)
+      (currentMatricula && operators.find(o => o.matricula && String(o.matricula).trim().toLowerCase() === currentMatricula)) ||
+      // 3. Por e-mail se existir campo email no operador
+      (currentEmail && operators.find(o => o.email && o.email.toLowerCase().trim() === currentEmail)) ||
+      // 4. Se o e-mail for op_<matricula>@156poa.com.br, extrai matrícula
+      (currentEmail.startsWith('op_') && operators.find(o => {
+        const extracted = currentEmail.replace(/^op_/, '').split('@')[0];
+        return o.matricula && String(o.matricula).trim().toLowerCase() === extracted.toLowerCase();
+      })) ||
+      // 5. Por nome exato
+      (currentName && !currentName.startsWith('operador (') && operators.find(o => o.name && o.name.toLowerCase().trim() === currentName)) ||
+      // 6. Por nome aproximado
+      (currentName && !currentName.startsWith('operador (') && operators.find(o => o.name && (o.name.toLowerCase().includes(currentName) || currentName.includes(o.name.toLowerCase())))) ||
+      null;
+
+    if (found) {
+      // Se o operador não tiver supervisor_name mas tiver supervisor_id, hidrata o nome do supervisor
+      const sup = supervisors.find(s => s.id === found.supervisor_id);
+      const resolvedSupervisorName = found.supervisor_name || (sup ? sup.name : 'Supervisor Geral');
+      return {
+        ...found,
+        supervisor_name: resolvedSupervisorName
+      };
+    }
+
+    return null;
+  }, [isOperator, operators, currentUser, supervisors]);
 
   // Filtrar operadores por supervisor se for supervisor logado
   const filteredOperators = useMemo(() => {
     if (!isSupervisor) return operators;
-    return operators.filter(o => 
-      (currentUser?.supervisor_id && o.supervisor_id === currentUser.supervisor_id) ||
-      (currentUser?.name && o.supervisor_name?.toLowerCase().includes(currentUser.name.toLowerCase()))
-    );
-  }, [operators, currentUser, isSupervisor]);
+    return operators.filter(o => {
+      const matchId = effectiveSupervisorId && o.supervisor_id === effectiveSupervisorId;
+      const matchName = effectiveSupervisorName && o.supervisor_name && 
+        (o.supervisor_name.toLowerCase().includes(effectiveSupervisorName.toLowerCase()) || 
+         effectiveSupervisorName.toLowerCase().includes(o.supervisor_name.toLowerCase()));
+      return matchId || matchName;
+    });
+  }, [operators, isSupervisor, effectiveSupervisorId, effectiveSupervisorName]);
 
   // Filtrar monitorias por supervisor se for supervisor logado
   const filteredMonitorings = useMemo(() => {
@@ -1687,7 +1783,12 @@ export default function App() {
                   onEditMonitoring={handleEditMonitoringClick}
                   onDeleteMonitoring={handleDeleteMonitoring}
                   onOpenFeedback={(op, mon) => setSelectedOperatorForFeedback({ ...op, targetMonitoring: mon })}
-                  activeProfile={{ role: userRole }}
+                  activeProfile={{ 
+                    ...currentUser, 
+                    role: userRole,
+                    supervisor_id: effectiveSupervisorId,
+                    name: effectiveSupervisorName || currentUser?.name 
+                  }}
                   darkMode={darkMode}
                 />
               )}

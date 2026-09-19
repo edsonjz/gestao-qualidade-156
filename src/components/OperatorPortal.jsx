@@ -118,7 +118,7 @@ export default function OperatorPortal({
             <div className="flex flex-wrap items-center gap-4 text-xs text-blue-100 font-medium">
               <span><strong>Matrícula:</strong> {operator?.matricula || currentUser?.matricula || 'N/D'}</span>
               <span>•</span>
-              <span><strong>Supervisor:</strong> {operator?.supervisor_name || 'Geral'}</span>
+              <span><strong>Supervisor:</strong> {operator?.supervisor_name || currentUser?.supervisor_name || 'Supervisor Geral'}</span>
               <span>•</span>
               <span><strong>Turno:</strong> {operator?.schedule || '08:00 - 17:12'}</span>
               <span>•</span>

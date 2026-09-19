@@ -24,10 +24,15 @@ export default function MonitoringsHistory({
 
   // Identificar escopo do perfil ativo
   const isSupervisor = (activeProfile?.role || '').toLowerCase() === 'supervisor';
-  const supervisorName = activeProfile?.name ? activeProfile.name.replace(' (Supervisor)', '') : '';
+  const supervisorName = activeProfile?.name ? activeProfile.name.replace(/\s*\(supervisor\)/i, '').trim() : '';
   const activeSupervisorId = useMemo(() => {
-    const s = supervisors.find(sup => sup.name === supervisorName || sup.id === activeProfile?.id);
-    return s ? s.id : null;
+    if (activeProfile?.supervisor_id) return activeProfile.supervisor_id;
+    const s = supervisors.find(sup => 
+      (supervisorName && sup.name.toLowerCase().trim() === supervisorName.toLowerCase().trim()) || 
+      sup.id === activeProfile?.id ||
+      (supervisorName && (sup.name.toLowerCase().includes(supervisorName.toLowerCase()) || supervisorName.toLowerCase().includes(sup.name.toLowerCase())))
+    );
+    return s ? s.id : (activeProfile?.id || null);
   }, [supervisors, supervisorName, activeProfile]);
 
   // Filtragem dos dados
@@ -35,11 +40,22 @@ export default function MonitoringsHistory({
     return monitorings.filter(m => {
       // 1. Filtragem obrigatória por supervisor logado
       if (isSupervisor) {
-        // Encontrar o operador da monitoria
+        // Como o App.jsx já passa monitorings e operators filtrados para o supervisor,
+        // apenas confirmamos a validação de segurança caso estejam numa base ampla
         const op = operators.find(o => o.id === m.operator_id);
-        if (!op) return false;
-        if (op.supervisor_id !== activeSupervisorId && op.supervisor_name !== supervisorName) {
-          return false;
+        // Se a monitoria já veio no set filtrado pelo App.jsx e o operador está na lista de operadores do supervisor, é válido
+        if (op) {
+          const matchSupId = activeSupervisorId && op.supervisor_id === activeSupervisorId;
+          const matchSupName = supervisorName && op.supervisor_name && 
+            (op.supervisor_name.toLowerCase().includes(supervisorName.toLowerCase()) || 
+             supervisorName.toLowerCase().includes(op.supervisor_name.toLowerCase()));
+          
+          // Se não tiver nenhum dos identificadores de supervisor para bater, mas o operador está na lista fornecida, mantém
+          if (activeSupervisorId || supervisorName) {
+            if (!matchSupId && !matchSupName) {
+              return false;
+            }
+          }
         }
       }
 
