@@ -9,7 +9,8 @@ import {
   Sparkles, 
   BookOpen, 
   RefreshCw,
-  Award
+  Award,
+  Users
 } from 'lucide-react';
 import { analyzeOperatorData } from '../utils/pdiEngine';
 
@@ -20,6 +21,7 @@ export default function PdiManagement({
   pdis = [], 
   supervisors = [], 
   currentUser,
+  userRole = 'admin',
   onOpenPdi,
   onRefresh,
   isLoading = false 
@@ -86,15 +88,18 @@ export default function PdiManagement({
     const criticalCount = enrichedOperators.filter(o => o.analysis.maturityLevel.includes('Crítico')).length;
     const completedPdisCount = enrichedOperators.filter(o => o.isPdiCompleted).length;
     
-    // Contagem de treinamentos em andamento
+    // Contagem de treinamentos em andamento da equipe visível
     let totalTrainings = 0;
     let completedTrainings = 0;
-    pdis.forEach(p => {
-      if (Array.isArray(p.trainings)) {
-        totalTrainings += p.trainings.length;
-        completedTrainings += p.trainings.filter(t => t.status === 'Concluído').length;
-      }
-    });
+    const operatorIdsSet = new Set(enrichedOperators.map(o => o.id));
+    pdis
+      .filter(p => operatorIdsSet.has(p.operator_id) || operatorIdsSet.has(p.operatorId))
+      .forEach(p => {
+        if (Array.isArray(p.trainings)) {
+          totalTrainings += p.trainings.length;
+          completedTrainings += p.trainings.filter(t => t.status === 'Concluído').length;
+        }
+      });
 
     const trainingCompletionRate = totalTrainings > 0 
       ? Math.round((completedTrainings / totalTrainings) * 100) 
@@ -252,16 +257,23 @@ export default function PdiManagement({
           />
         </div>
 
-        <select
-          value={selectedSupervisor}
-          onChange={(e) => setSelectedSupervisor(e.target.value)}
-          className="bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer"
-        >
-          <option value="todos">Todos os Supervisores</option>
-          {supervisors.map(s => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+        {userRole === 'supervisor' ? (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-lg text-xs font-bold text-blue-700 dark:text-blue-300">
+            <Users className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="truncate">Equipe: {currentUser?.name?.replace(/\s*\(supervisor\)/i, '') || 'Minha Equipe'}</span>
+          </div>
+        ) : (
+          <select
+            value={selectedSupervisor}
+            onChange={(e) => setSelectedSupervisor(e.target.value)}
+            className="bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs shadow-sm text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer"
+          >
+            <option value="todos">Todos os Supervisores</option>
+            {supervisors.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
 
         <select
           value={selectedMaturity}

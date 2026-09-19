@@ -46,7 +46,6 @@ export default function Sidebar({ activeTab, setActiveTab, unreadAlertsCount, us
         { id: 'operators', label: 'Operadores', icon: Users },
         { id: 'monitorings_history', label: 'Histórico de Monitorias', icon: ClipboardList },
         { id: 'audits', label: 'Auditorias', icon: Sparkles },
-        { id: 'pdi', label: 'Diagnóstico & PDI', icon: GraduationCap },
         { id: 'monitors', label: 'Qualidade & Equipes', icon: Award },
         { id: 'config', label: 'Checklist de Qualidade', icon: Settings },
       ];

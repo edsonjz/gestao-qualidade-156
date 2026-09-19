@@ -1770,16 +1770,47 @@ export default function App() {
   const isMonitor = userRole === 'monitor';
   const isOperator = userRole === 'operador';
 
-  // Resolução exata do supervisor logado (ID e nome)
+  // Resolução exata e resiliente do supervisor logado (ID e nome)
   const activeSupervisorRecord = useMemo(() => {
     if (!isSupervisor || !currentUser) return null;
-    const cleanUserName = (currentUser.name || '').replace(/\s*\(supervisor\)/i, '').trim().toLowerCase();
-    return supervisors.find(s => 
+
+    // 1. Match direto por supervisor_id ou id
+    const directMatch = supervisors.find(s => 
       (currentUser.supervisor_id && s.id === currentUser.supervisor_id) ||
-      (currentUser.id && s.id === currentUser.id) ||
-      (s.name && cleanUserName && s.name.trim().toLowerCase() === cleanUserName) ||
-      (s.name && cleanUserName && (s.name.toLowerCase().includes(cleanUserName) || cleanUserName.includes(s.name.toLowerCase())))
-    ) || null;
+      (currentUser.id && s.id === currentUser.id)
+    );
+    if (directMatch) return directMatch;
+
+    // 2. Match por nome robusto (ignora acentos, "supervisor", nomes intermediários)
+    const cleanInput = (currentUser.name || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s*\(supervisor\)/i, '')
+      .trim()
+      .toLowerCase();
+    
+    if (!cleanInput) return null;
+    const inputParts = cleanInput.split(/\s+/).filter(p => p.length > 2);
+
+    return supervisors.find(s => {
+      const sClean = (s.name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+      
+      if (sClean === cleanInput) return true;
+      if (sClean.includes(cleanInput) || cleanInput.includes(sClean)) return true;
+      
+      const sParts = sClean.split(/\s+/).filter(p => p.length > 2);
+      // Confere primeiro e último nome (ex: "Edson Azevedo" x "EDSON JOSE AZEVEDO")
+      if (sParts.length > 0 && inputParts.length > 0) {
+        if (sParts[0] === inputParts[0] && sParts[sParts.length - 1] === inputParts[inputParts.length - 1]) return true;
+      }
+      // Confere se todas as partes significativas do input estão no nome do supervisor
+      if (inputParts.length > 0 && inputParts.every(p => sParts.includes(p))) return true;
+      return false;
+    }) || null;
   }, [isSupervisor, currentUser, supervisors]);
 
   const effectiveSupervisorId = activeSupervisorRecord?.id || currentUser?.supervisor_id || null;
@@ -1824,24 +1855,61 @@ export default function App() {
     return null;
   }, [isOperator, operators, currentUser, supervisors]);
 
-  // Filtrar operadores por supervisor se for supervisor logado
+  // Filtrar operadores por supervisor se for supervisor logado (somente operadores da sua equipe)
   const filteredOperators = useMemo(() => {
     if (!isSupervisor) return operators;
+    
+    const targetId = effectiveSupervisorId;
+    const targetName = (effectiveSupervisorName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    const targetParts = targetName.split(/\s+/).filter(p => p.length > 2);
+
     return operators.filter(o => {
-      const matchId = effectiveSupervisorId && o.supervisor_id === effectiveSupervisorId;
-      const matchName = effectiveSupervisorName && o.supervisor_name && 
-        (o.supervisor_name.toLowerCase().includes(effectiveSupervisorName.toLowerCase()) || 
-         effectiveSupervisorName.toLowerCase().includes(o.supervisor_name.toLowerCase()));
-      return matchId || matchName;
+      // 1. Por ID do supervisor
+      if (targetId && (o.supervisor_id === targetId || String(o.supervisor_id) === String(targetId))) {
+        return true;
+      }
+      // 2. Por nome do supervisor
+      if (o.supervisor_name && targetName) {
+        const opSupName = o.supervisor_name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+        if (opSupName === targetName) return true;
+        if (opSupName.includes(targetName) || targetName.includes(opSupName)) return true;
+        const opSupParts = opSupName.split(/\s+/).filter(p => p.length > 2);
+        if (opSupParts.length > 0 && targetParts.length > 0) {
+          if (opSupParts[0] === targetParts[0] && opSupParts[opSupParts.length - 1] === targetParts[targetParts.length - 1]) return true;
+        }
+        if (targetParts.length > 0 && targetParts.every(p => opSupParts.includes(p))) return true;
+      }
+      return false;
     });
   }, [operators, isSupervisor, effectiveSupervisorId, effectiveSupervisorName]);
 
-  // Filtrar monitorias por supervisor se for supervisor logado
+  // Filtrar monitorias por supervisor se for supervisor logado (somente monitorias da sua equipe)
   const filteredMonitorings = useMemo(() => {
     if (!isSupervisor) return monitorings;
     const supervisorOpIds = new Set(filteredOperators.map(o => o.id));
-    return monitorings.filter(m => supervisorOpIds.has(m.operator_id));
+    return monitorings.filter(m => supervisorOpIds.has(m.operator_id) || supervisorOpIds.has(String(m.operator_id)));
   }, [monitorings, filteredOperators, isSupervisor]);
+
+  // Filtrar PDIs por supervisor se for supervisor logado (somente PDIs dos seus respectivos operadores)
+  const visiblePdis = useMemo(() => {
+    if (!isSupervisor) return pdis;
+    const supervisorOpIds = new Set(filteredOperators.map(o => o.id));
+    return pdis.filter(p => 
+      supervisorOpIds.has(p.operator_id) || 
+      supervisorOpIds.has(p.operatorId) ||
+      (p.operator_id && supervisorOpIds.has(String(p.operator_id)))
+    );
+  }, [pdis, filteredOperators, isSupervisor]);
+
+  // Filtrar Auditorias por supervisor se for supervisor logado (somente auditorias dos seus respectivos operadores)
+  const visibleAudits = useMemo(() => {
+    if (!isSupervisor) return audits;
+    const supervisorOpIds = new Set(filteredOperators.map(o => o.id));
+    return audits.filter(a => 
+      supervisorOpIds.has(a.operator_id) || 
+      (a.operator_id && supervisorOpIds.has(String(a.operator_id)))
+    );
+  }, [audits, filteredOperators, isSupervisor]);
 
   // Filtrar fila inteligente se for monitora vinculada
   const queueOperators = useMemo(() => {
@@ -2016,15 +2084,16 @@ export default function App() {
                 />
               )}
 
-              {/* Nova Aba: Diagnóstico & PDI (Monitorias + Auditorias) */}
-              {!isOperator && activeTab === 'pdi' && (
+              {/* Nova Aba: Diagnóstico & PDI (Restrita ao perfil de Supervisor e Administrador) */}
+              {(isSupervisor || userRole === 'admin') && activeTab === 'pdi' && (
                 <PdiManagement
                   operators={filteredOperators}
                   monitorings={filteredMonitorings}
-                  audits={audits}
-                  pdis={pdis}
+                  audits={visibleAudits}
+                  pdis={visiblePdis}
                   supervisors={supervisors}
                   currentUser={currentUser}
+                  userRole={userRole}
                   onOpenPdi={(op, pdi) => {
                     setSelectedOperatorForPdi(op);
                     setSelectedPdiForEdit(pdi || null);
@@ -2164,11 +2233,11 @@ export default function App() {
           onEditMonitoring={handleEditMonitoringClick}
           onDeleteMonitoring={handleDeleteMonitoring}
           darkMode={darkMode}
-          onOpenPdi={(op) => {
+          onOpenPdi={(isSupervisor || userRole === 'admin') ? (op) => {
             setSelectedOperatorForPdi(op);
             const existing = pdis.find(p => p.operator_id === op.id);
             setSelectedPdiForEdit(existing || null);
-          }}
+          } : null}
         />
       )}
 
